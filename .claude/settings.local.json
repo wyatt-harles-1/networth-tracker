@@ -20,7 +20,9 @@
       "Bash(npm outdated:*)",
       "Bash(npm update:*)",
       "Bash(npm install:*)",
-      "Bash(node scripts/generate-icons.js:*)"
+      "Bash(node scripts/generate-icons.js:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
