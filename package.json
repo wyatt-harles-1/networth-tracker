@@ -15,7 +15,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "type-check": "tsc --noEmit",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
