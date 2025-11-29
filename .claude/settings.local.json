@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx supabase:*)",
+      "Bash(timeout:*)",
+      "Bash(move \"20250106000001_add_ticker_directory_sector_fields.sql\" \"20251020200001_add_ticker_directory_sector_fields.sql\")",
+      "Bash(find:*)",
+      "Bash(npm run db:types:*)",
+      "Bash(git checkout:*)",
+      "Bash(node -e:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)",
+      "Bash(npx eslint:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm outdated:*)",
+      "Bash(npm update:*)",
+      "Bash(npm install:*)",
+      "Bash(node scripts/generate-icons.js:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
