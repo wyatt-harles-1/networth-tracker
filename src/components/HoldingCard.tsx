@@ -74,36 +74,39 @@ export function HoldingCard({ holding, displayMode }: HoldingCardProps) {
 
   return (
     <Card className="p-4 bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="flex flex-col w-20">
-            <span className="text-sm font-semibold px-2 py-0.5 bg-blue-100 rounded text-blue-700 text-center">
-              {holding.symbol}
-            </span>
-            <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600 mt-1 text-center">
-              {holding.asset_type}
+      <div className="flex items-center justify-between w-full">
+        {/* Left: Symbol and Asset Type */}
+        <div className="flex flex-col w-24">
+          <span className="text-sm font-semibold px-2 py-1 bg-blue-100 rounded text-blue-700 text-center">
+            {holding.symbol}
+          </span>
+          <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600 mt-1 text-center">
+            {holding.asset_type}
+          </span>
+        </div>
+
+        {/* Center: Shares and Cost Info */}
+        <div className="flex flex-col items-start flex-1 px-6">
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-xs text-gray-500 whitespace-nowrap">Shares:</span>
+            <span className="text-sm font-semibold text-gray-700">
+              {Number(holding.quantity)}
             </span>
           </div>
-          <div className="flex items-center gap-8">
-            <div className="flex flex-col w-20">
-              <span className="text-xs text-gray-500 mb-1">Shares:</span>
-              <span className="text-sm font-semibold text-gray-700">
-                {Number(holding.quantity)}
-              </span>
-            </div>
-            <div className="flex flex-col w-24">
-              <span className="text-xs text-gray-500 mb-1">
-                {displayMode === 'value' ? 'Cost Basis:' : 'Avg. Cost:'}
-              </span>
-              <span className="text-sm font-semibold text-gray-700">
-                {displayMode === 'value'
-                  ? formatCurrency(Number(holding.cost_basis))
-                  : formatCurrency(avgPricePerShare)}
-              </span>
-            </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs text-gray-500 whitespace-nowrap">
+              {displayMode === 'value' ? 'Cost Basis:' : 'Avg. Cost:'}
+            </span>
+            <span className="text-sm font-semibold text-gray-700">
+              {displayMode === 'value'
+                ? formatCurrency(Number(holding.cost_basis))
+                : formatCurrency(avgPricePerShare)}
+            </span>
           </div>
         </div>
-        <div className="text-right">
+
+        {/* Right: Current Value/Price and Gain */}
+        <div className="text-right flex-shrink-0">
           {displayMode === 'value' ? (
             <>
               {/* Market Value Mode */}
