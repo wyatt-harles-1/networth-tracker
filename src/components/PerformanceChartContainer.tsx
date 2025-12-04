@@ -26,6 +26,7 @@ interface PerformanceChartContainerProps {
   extraButton?: ReactNode;
   extraContent?: ReactNode;
   headerContent?: ReactNode;
+  currentValue?: number; // Optional: actual current portfolio value
 }
 
 export function PerformanceChartContainer({
@@ -40,6 +41,7 @@ export function PerformanceChartContainer({
   extraButton,
   extraContent,
   headerContent,
+  currentValue,
 }: PerformanceChartContainerProps) {
   return (
     <div className="py-4 px-0">
@@ -74,6 +76,7 @@ export function PerformanceChartContainer({
         loading={loading}
         onRefresh={onRefresh}
         refreshing={refreshing}
+        currentValue={currentValue}
       />
     </div>
   );

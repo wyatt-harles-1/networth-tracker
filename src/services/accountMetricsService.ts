@@ -176,7 +176,10 @@ export class AccountMetricsService {
       }
 
       // Calculate start and end dates for the historical price bulk fetch
+      // endDate is set to yesterday so the loop doesn't create a point for today
+      // Today's point will be added later with current real-time prices
       const endDate = new Date();
+      endDate.setDate(endDate.getDate() - 1); // Set to yesterday
       endDate.setHours(0, 0, 0, 0);
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysBack);
@@ -310,6 +313,34 @@ export class AccountMetricsService {
         // Move to next interval
         currentDate.setHours(currentDate.getHours() + intervalHours);
       }
+
+      // Update or add a final data point for "right now" using current real-time prices
+      // This ensures the chart always shows the most up-to-date value
+      const now = new Date();
+      let currentHoldingsValue = 0;
+      let currentTotalCostBasis = 0;
+
+      for (const [symbol, holding] of holdingsOverTime.entries()) {
+        if (holding.quantity > 0.00001) {
+          const currentPrice = fallbackPriceMap.get(symbol) || lastKnownPrices.get(symbol) || 0;
+          currentHoldingsValue += holding.quantity * currentPrice;
+          currentTotalCostBasis += holding.costBasis;
+        }
+      }
+
+      const currentUnrealizedGain = currentHoldingsValue - currentTotalCostBasis;
+      const currentTotalValue = currentHoldingsValue + cashBalance;
+
+      // Add today's point with current real-time prices
+      // The loop only goes up to yesterday, so we always add a new point for today
+      historyPoints.push({
+        snapshot_date: now.toISOString(),
+        balance: currentTotalValue,
+        holdings_value: currentHoldingsValue,
+        total_cost_basis: currentTotalCostBasis,
+        unrealized_gain: currentUnrealizedGain,
+        realized_gain: 0,
+      });
 
       console.log(`[AccountMetrics] ✅ Portfolio calculation complete!`);
       console.log(`[AccountMetrics] Generated ${historyPoints.length} daily data points`);

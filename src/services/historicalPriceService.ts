@@ -21,6 +21,10 @@ interface AutoFetchProgress {
   status: 'pending' | 'fetching' | 'completed' | 'error';
   pricesAdded?: number;
   error?: string;
+  current?: number; // Current symbol being processed (1-indexed)
+  total?: number; // Total symbols to process
+  estimatedTimeRemaining?: number; // Estimated seconds remaining
+  overallProgress?: number; // Overall progress percentage (0-100)
 }
 
 interface AutoFetchResult {
@@ -39,13 +43,16 @@ export class HistoricalPriceService {
    *
    * @param maxSymbols - Limit how many symbols to fetch per session (default: 3 for free tier)
    * @param onlyRecent - If true, only fetch last 7 days (for daily updates)
+   * @param onProgress - Callback for progress updates
+   * @param abortSignal - AbortSignal to cancel the operation
    */
   static async smartSync(
     userId: string,
     accountId: string,
     maxSymbols: number = 3,
     onlyRecent: boolean = false,
-    onProgress?: (progress: AutoFetchProgress) => void
+    onProgress?: (progress: AutoFetchProgress) => void,
+    abortSignal?: AbortSignal
   ): Promise<AutoFetchResult> {
     console.log(`\n[HistoricalPrice] 🎯 Starting smart sync (max ${maxSymbols} symbols, recent only: ${onlyRecent})`);
 
@@ -128,10 +135,34 @@ export class HistoricalPriceService {
       }
 
       // Fetch data for selected symbols
-      for (const symbol of symbolsToFetch) {
+      const startTime = Date.now();
+
+      for (let i = 0; i < symbolsToFetch.length; i++) {
+        // Check if operation was aborted
+        if (abortSignal?.aborted) {
+          console.log('[HistoricalPrice] ⚠️ Sync operation aborted by user');
+          result.errors.push('Operation cancelled by user');
+          break;
+        }
+
+        const symbol = symbolsToFetch[i];
+
+        // Calculate progress metrics
+        const currentProgress = i + 1;
+        const totalSymbols = symbolsToFetch.length;
+        const overallProgress = (currentProgress / totalSymbols) * 100;
+
+        // Calculate time remaining (13 seconds per symbol after the first)
+        const symbolsRemaining = totalSymbols - currentProgress;
+        const estimatedTimeRemaining = symbolsRemaining * 13; // 13 seconds per API call
+
         const progressItem: AutoFetchProgress = {
           symbol,
           status: 'fetching',
+          current: currentProgress,
+          total: totalSymbols,
+          overallProgress: Math.round(overallProgress),
+          estimatedTimeRemaining,
         };
         result.progress.push(progressItem);
         if (onProgress) onProgress(progressItem);
@@ -147,7 +178,7 @@ export class HistoricalPriceService {
 
           // Fetch historical prices
           console.log(`[HistoricalPrice] 🌐 Fetching from Alpha Vantage...`);
-          const fetchResult = await PriceService.getHistoricalPrices(symbol, onlyRecent ? 'compact' : 'full');
+          const fetchResult = await PriceService.getHistoricalPrices(symbol, 'compact');
 
           if (fetchResult.error) {
             console.error(`[HistoricalPrice] ❌ ${symbol} - API error:`, fetchResult.error);
@@ -319,7 +350,7 @@ export class HistoricalPriceService {
 
           // Fetch historical prices from Alpha Vantage
           console.log(`[HistoricalPrice] 🌐 Fetching from Alpha Vantage...`);
-          const fetchResult = await PriceService.getHistoricalPrices(symbol, 'full');
+          const fetchResult = await PriceService.getHistoricalPrices(symbol, 'compact');
 
           if (fetchResult.error) {
             console.error(`[HistoricalPrice] ❌ ${symbol} - API error:`, fetchResult.error);
@@ -545,7 +576,7 @@ export class HistoricalPriceService {
 
         await new Promise(resolve => setTimeout(resolve, 13000));
 
-        const result = await PriceService.getHistoricalPrices(symbol, 'full');
+        const result = await PriceService.getHistoricalPrices(symbol, 'compact');
 
         if (result.error) {
           errors.push(`${symbol}: ${result.error}`);

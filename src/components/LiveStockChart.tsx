@@ -38,13 +38,22 @@ interface LiveStockChartProps {
   loading?: boolean;
   onRefresh?: () => void;
   refreshing?: boolean;
+  currentValue?: number; // Optional: actual current portfolio value (overrides last snapshot)
+  averageCost?: number; // Optional: average cost basis per share (for holdings chart)
+  onTimeRangeChange?: (range: '1D' | '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL') => void;
 }
 
 export function LiveStockChart({
   data,
   timeRange,
   loading = false,
+  currentValue: propCurrentValue,
+  averageCost,
+  onTimeRangeChange,
 }: LiveStockChartProps) {
+  // Generate unique gradient ID to avoid conflicts between multiple charts
+  const gradientId = useMemo(() => `gradient-${Math.random().toString(36).substr(2, 9)}`, []);
+
   // Transform and prepare chart data
   const chartData: DataPoint[] = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -130,8 +139,10 @@ export function LiveStockChart({
       };
     }
 
-    const currentValue = chartData[chartData.length - 1].value;
-    const startValue = chartData[0].value;
+    // Use prop currentValue if provided, otherwise use last chart data point
+    // Round to 2 decimal places first to ensure displayed values match the calculation
+    const currentValue = Math.round((propCurrentValue ?? chartData[chartData.length - 1].value) * 100) / 100;
+    const startValue = Math.round(chartData[0].value * 100) / 100;
     const change = currentValue - startValue;
     const changePercent = startValue > 0 ? (change / startValue) * 100 : 0;
 
@@ -140,16 +151,28 @@ export function LiveStockChart({
     const periodHigh = Math.max(...values);
     const periodLow = Math.min(...values);
 
+    const isPositive = change >= 0;
+
+    // Debug logging
+    console.log('[LiveStockChart] Metrics calculation:', {
+      startValue,
+      currentValue,
+      change,
+      changePercent: changePercent.toFixed(2) + '%',
+      isPositive,
+      dataPoints: chartData.length,
+    });
+
     return {
       currentValue,
       startValue,
       change,
       changePercent,
-      isPositive: change >= 0,
+      isPositive,
       periodHigh,
       periodLow,
     };
-  }, [chartData]);
+  }, [chartData, propCurrentValue]);
 
   // Calculate nice Y-axis domain and ticks
   const yAxisConfig = useMemo(() => {
@@ -354,10 +377,10 @@ export function LiveStockChart({
         <ResponsiveContainer width="100%" height={400}>
           <AreaChart
             data={chartData}
-            margin={{ top: 10, right: 30, left: 0, bottom: 40 }}
+            margin={{ top: 10, right: 30, left: 0, bottom: 45 }}
           >
             <defs>
-              <linearGradient id="liveGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
                   stopColor={metrics.isPositive ? '#10b981' : '#ef4444'}
@@ -412,18 +435,27 @@ export function LiveStockChart({
                 strokeDasharray: '5 5',
               }}
             />
-            <ReferenceLine
-              y={metrics.startValue}
-              stroke="#9ca3af"
-              strokeDasharray="3 3"
-              strokeWidth={1}
-            />
+            {averageCost && (
+              <ReferenceLine
+                y={averageCost}
+                stroke="#3b82f6"
+                strokeDasharray="5 5"
+                strokeWidth={2}
+                label={{
+                  value: 'Avg Cost',
+                  position: 'right',
+                  fill: '#3b82f6',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              />
+            )}
             <Area
               type="monotone"
               dataKey="value"
               stroke={metrics.isPositive ? '#10b981' : '#ef4444'}
               strokeWidth={2}
-              fill="url(#liveGradient)"
+              fill={`url(#${gradientId})`}
               animationDuration={300}
               animationEasing="ease-in-out"
               dot={false}
@@ -439,7 +471,7 @@ export function LiveStockChart({
         </ResponsiveContainer>
 
         {/* Chart Footer */}
-        <div className="flex items-center justify-between mt-4 pt-4">
+        <div className="flex items-center justify-between -mt-10">
           <div className="text-xs text-gray-500">
             Showing {chartData.length} data points
           </div>

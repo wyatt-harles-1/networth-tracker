@@ -127,65 +127,57 @@ export function TransactionCard({
       key={transactionId}
       className="p-4 bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow"
     >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="flex flex-col gap-1">
-            {metadata.ticker ? (
-              <span className="text-sm font-semibold px-2 py-0.5 bg-blue-100 rounded text-blue-700 text-center">
-                {metadata.ticker}
-              </span>
-            ) : (
-              <p className="text-sm font-semibold text-gray-900 px-2 py-0.5">
-                {description}
-              </p>
-            )}
-            <span
-              className={`text-xs px-2 py-0.5 rounded text-center whitespace-nowrap flex items-center justify-center gap-1 ${getTransactionColor(transactionType)}`}
-            >
-              {getTransactionIcon(transactionType)}
-              {transactionType.replace(/_/g, ' ')}
+      <div className="flex items-center justify-between w-full">
+        {/* Left: Ticker and Transaction Type */}
+        <div className="flex flex-col w-24">
+          {metadata.ticker ? (
+            <span className="text-sm font-semibold px-2 py-1 bg-blue-100 rounded text-blue-700 text-center">
+              {metadata.ticker}
             </span>
-            <span className="text-xs text-gray-500 px-2">
-              {transactionDate
-                ? parseLocalDate(transactionDate).toLocaleDateString('en-US', {
-                    month: '2-digit',
-                    day: '2-digit',
-                    year: 'numeric',
-                  })
-                : ''}
-            </span>
-          </div>
-          <div className="flex items-center gap-8">
-            {metadata.quantity && (
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-500 mb-1">Qty:</span>
-                <span className="text-sm font-semibold text-gray-700">
-                  {Number(metadata.quantity)}
-                </span>
-              </div>
-            )}
-            {['stock_dividend', 'etf_dividend', 'bond_coupon'].includes(
-              transactionType
-            ) &&
-              metadata.dividendAmount && (
-                <div className="flex flex-col">
-                  <span className="text-xs text-gray-500 mb-1">Div/Share:</span>
-                  <span className="text-sm font-semibold text-gray-700">
-                    {formatCurrency(Number(metadata.dividendAmount))}
-                  </span>
-                </div>
-              )}
-            {metadata.price && (
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-500 mb-1">Price:</span>
-                <span className="text-sm font-semibold text-gray-700">
-                  {formatCurrency(Number(metadata.price))}
-                </span>
-              </div>
-            )}
-          </div>
+          ) : (
+            <p className="text-xs font-semibold text-gray-900 px-2 py-1 text-center">
+              {description.substring(0, 10)}
+            </p>
+          )}
+          <span
+            className={`text-xs px-2 py-1 rounded text-center mt-1 flex items-center justify-center gap-1 ${getTransactionColor(transactionType)}`}
+          >
+            {getTransactionIcon(transactionType)}
+            <span className="truncate">{transactionType.replace(/_/g, ' ')}</span>
+          </span>
+          <span className="text-xs text-gray-500 px-2 text-center mt-1">
+            {transactionDate
+              ? parseLocalDate(transactionDate).toLocaleDateString('en-US', {
+                  month: '2-digit',
+                  day: '2-digit',
+                  year: 'numeric',
+                })
+              : ''}
+          </span>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* Center: Details */}
+        <div className="flex flex-col items-start flex-1 px-6 gap-2">
+          {metadata.quantity && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs text-gray-500 whitespace-nowrap">Qty:</span>
+              <span className="text-sm font-semibold text-gray-700">
+                {Number(metadata.quantity)}
+              </span>
+            </div>
+          )}
+          {metadata.price && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs text-gray-500 whitespace-nowrap">Price:</span>
+              <span className="text-sm font-semibold text-gray-700">
+                {formatCurrency(Number(metadata.price))}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Amount and Actions */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           <div className="text-right">
             <p
               className={`text-base font-bold ${

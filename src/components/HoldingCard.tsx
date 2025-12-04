@@ -61,19 +61,23 @@ interface Holding {
 interface HoldingCardProps {
   holding: Holding;
   displayMode: 'value' | 'price';
+  onSelect?: (holding: Holding) => void;
 }
 
 /**
  * Holding card component
  */
-export function HoldingCard({ holding, displayMode }: HoldingCardProps) {
+export function HoldingCard({ holding, displayMode, onSelect }: HoldingCardProps) {
   const avgPricePerShare =
     Number(holding.quantity) > 0
       ? Number(holding.cost_basis) / Number(holding.quantity)
       : 0;
 
   return (
-    <Card className="p-4 bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+    <Card
+      className="p-4 bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:border-blue-300"
+      onClick={() => onSelect?.(holding)}
+    >
       <div className="flex items-center justify-between w-full">
         {/* Left: Symbol and Asset Type */}
         <div className="flex flex-col w-24">

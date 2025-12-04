@@ -47,12 +47,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
 import { useHoldings } from '@/hooks/useHoldings';
 import { usePortfolioCalculations } from '@/hooks/usePortfolioCalculations';
 import { useAuth } from '@/contexts/AuthContext';
 import { PerformanceChartContainer } from './PerformanceChartContainer';
 import { HoldingCard } from './HoldingCard';
+import { HoldingDetailModal } from './HoldingDetailModal';
 import { AssetTypeFilter } from './AssetTypeFilter';
 import {
   AccountMetricsService,
@@ -65,7 +67,7 @@ import {
  */
 export function PortfolioReal() {
   const [timeRange, setTimeRange] = useState<
-    '1D' | '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL'
+    'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   >('3M');
   const [historyData, setHistoryData] = useState<AccountBalanceHistoryPoint[]>(
     []
@@ -84,9 +86,14 @@ export function PortfolioReal() {
   const [syncingPrices, setSyncingPrices] = useState(false);
   const [syncProgress, setSyncProgress] = useState<string>('');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncCurrent, setSyncCurrent] = useState(0);
+  const [syncTotal, setSyncTotal] = useState(0);
+  const [syncTimeRemaining, setSyncTimeRemaining] = useState(0);
+  const [syncAbortController, setSyncAbortController] = useState<AbortController | null>(null);
   const [portfolioMetricsData, setPortfolioMetricsData] =
     useState<AccountMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+  const [selectedHolding, setSelectedHolding] = useState<any | null>(null);
 
   const { user } = useAuth();
   const {
@@ -112,14 +119,13 @@ export function PortfolioReal() {
       );
 
       const daysMap = {
-        '1D': 1,
-        '1W': 7,
-        '1M': 30,
-        '3M': 90,
-        YTD: ytdDays,
-        '1Y': 365,
-        '5Y': 1825,
-        ALL: 3650,
+        '1W': 6, // 7 days inclusive (today + 6 days back)
+        '1M': 29, // 30 days inclusive
+        '3M': 89, // 90 days inclusive
+        YTD: ytdDays - 1, // Inclusive from Jan 1 to today
+        '1Y': 364, // 365 days inclusive
+        '5Y': 1824, // 1825 days inclusive
+        ALL: 3649, // 3650 days inclusive
       };
 
       const historyResult =
@@ -169,14 +175,13 @@ export function PortfolioReal() {
       );
 
       const daysMap = {
-        '1D': 1,
-        '1W': 7,
-        '1M': 30,
-        '3M': 90,
-        YTD: ytdDays,
-        '1Y': 365,
-        '5Y': 1825,
-        ALL: 3650,
+        '1W': 6, // 7 days inclusive (today + 6 days back)
+        '1M': 29, // 30 days inclusive
+        '3M': 89, // 90 days inclusive
+        YTD: ytdDays - 1, // Inclusive from Jan 1 to today
+        '1Y': 364, // 365 days inclusive
+        '5Y': 1824, // 1825 days inclusive
+        ALL: 3649, // 3650 days inclusive
       };
 
       const historyResult =
@@ -196,16 +201,42 @@ export function PortfolioReal() {
   };
 
   const handleTimeRangeChange = async (
-    range: '1D' | '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL'
+    range: 'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   ) => {
     setTimeRange(range);
+  };
+
+  // Format time remaining in a human-readable format
+  const formatTimeRemaining = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  };
+
+  const handleCancelSync = () => {
+    if (syncAbortController) {
+      console.log('[Portfolio] 🛑 Cancelling sync operation...');
+      syncAbortController.abort();
+      setSyncMessage('Sync operation cancelled');
+      setTimeout(() => setSyncMessage(null), 3000);
+    }
   };
 
   const handleSyncPrices = async () => {
     if (!user) return;
 
+    // Create abort controller for cancellation
+    const abortController = new AbortController();
+    setSyncAbortController(abortController);
+
     setSyncingPrices(true);
     setSyncProgress('Syncing prices across all accounts...');
+    setSyncCurrent(0);
+    setSyncTotal(0);
+    setSyncTimeRemaining(0);
 
     console.log('[Portfolio] 🎯 Manual portfolio-wide price sync started');
 
@@ -233,9 +264,13 @@ export function PortfolioReal() {
           false,
           progress => {
             if (progress.status === 'fetching') {
-              setSyncProgress(`Fetching prices for ${progress.symbol}...`);
+              setSyncProgress(`Fetching ${progress.symbol}...`);
+              setSyncCurrent(progress.current || 0);
+              setSyncTotal(progress.total || 0);
+              setSyncTimeRemaining(progress.estimatedTimeRemaining || 0);
             }
-          }
+          },
+          abortController.signal
         );
 
         totalPricesAdded += fetchResult.totalPricesAdded;
@@ -262,6 +297,10 @@ export function PortfolioReal() {
     } finally {
       setSyncingPrices(false);
       setSyncProgress('');
+      setSyncCurrent(0);
+      setSyncTotal(0);
+      setSyncTimeRemaining(0);
+      setSyncAbortController(null);
     }
   };
 
@@ -282,7 +321,7 @@ export function PortfolioReal() {
       };
     }
 
-    // If asset types are filtered, calculate current value from filtered holdings
+    // Calculate current value from live holdings data (not historical snapshots)
     let currentValue: number;
     if (selectedAssetTypes.size > 0) {
       const filteredHoldings = holdings.filter(holding =>
@@ -292,7 +331,10 @@ export function PortfolioReal() {
         return sum + Number(holding.current_value);
       }, 0);
     } else {
-      currentValue = historyData[historyData.length - 1].holdings_value;
+      // Use live holdings data for accurate current value
+      currentValue = holdings.reduce((sum: number, holding) => {
+        return sum + Number(holding.current_value);
+      }, 0);
     }
 
     const startValue = historyData[0].holdings_value;
@@ -454,11 +496,10 @@ export function PortfolioReal() {
           data={historyData}
           timeRange={timeRange}
           availableTimeRanges={[
-            '1D',
+            'YTD',
             '1W',
             '1M',
             '3M',
-            'YTD',
             '1Y',
             '5Y',
             'ALL',
@@ -467,6 +508,7 @@ export function PortfolioReal() {
           refreshing={refreshing}
           onTimeRangeChange={handleTimeRangeChange}
           onRefresh={handleRefreshChart}
+          currentValue={portfolioMetrics.currentValue}
           extraButton={
             <Button
               onClick={handleSyncPrices}
@@ -489,10 +531,52 @@ export function PortfolioReal() {
           }
           extraContent={
             syncProgress ? (
-              <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-md mx-4">
-                <p className="text-sm text-purple-700 font-medium">
-                  {syncProgress}
-                </p>
+              <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-md mx-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm text-purple-700 font-medium">
+                        {syncProgress}
+                      </p>
+                      {syncTimeRemaining > 0 && (
+                        <p className="text-xs text-purple-600 mt-1">
+                          Estimated time: {formatTimeRemaining(syncTimeRemaining)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {syncTotal > 0 && (
+                        <span className="text-xs text-purple-600 font-semibold">
+                          {syncCurrent}/{syncTotal}
+                        </span>
+                      )}
+                      <Button
+                        onClick={handleCancelSync}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs border-red-300 text-red-700 hover:bg-red-50 h-7"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                  {syncTotal > 0 && (
+                    <div className="space-y-1">
+                      <Progress
+                        value={(syncCurrent / syncTotal) * 100}
+                        className="h-2.5 bg-purple-100"
+                      />
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-purple-600">
+                          {Math.round((syncCurrent / syncTotal) * 100)}% complete
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          API rate limit: 5 calls/minute
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : undefined
           }
@@ -664,12 +748,19 @@ export function PortfolioReal() {
                   key={holding.id}
                   holding={holding}
                   displayMode={holdingsDisplayMode}
+                  onSelect={setSelectedHolding}
                 />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Holding Detail Modal */}
+      <HoldingDetailModal
+        holding={selectedHolding}
+        onClose={() => setSelectedHolding(null)}
+      />
     </div>
   );
 }

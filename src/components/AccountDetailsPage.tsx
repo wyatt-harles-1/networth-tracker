@@ -100,6 +100,7 @@ import { HistoricalPriceService } from '@/services/historicalPriceService';
 import { TransactionFormNew } from './TransactionForm';
 import { TransactionCard } from './TransactionCard';
 import { HoldingCard } from './HoldingCard';
+import { HoldingDetailModal } from './HoldingDetailModal';
 import {
   Transaction,
   TransactionInsert,
@@ -186,7 +187,7 @@ export function AccountDetailsPage({
 
   // --- Time Range & Chart State ---
   const [timeRange, setTimeRange] = useState<
-    '1D' | '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL'
+    'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   >('3M');
 
   // --- Transaction UI State ---
@@ -198,6 +199,9 @@ export function AccountDetailsPage({
     Transaction | undefined
   >(undefined);
   const [showSettings, setShowSettings] = useState(false);
+
+  // --- Holding UI State ---
+  const [selectedHolding, setSelectedHolding] = useState<any | null>(null);
 
   // --- Transaction Filtering State ---
   const [transactionSearchQuery, setTransactionSearchQuery] = useState('');
@@ -486,14 +490,13 @@ export function AccountDetailsPage({
     );
 
     const daysMap = {
-      '1D': 1,
-      '1W': 7,
-      '1M': 30,
-      '3M': 90,
-      YTD: ytdDays,
-      '1Y': 365,
-      '5Y': 1825,
-      ALL: 3650,
+      '1W': 6, // 7 days inclusive (today + 6 days back)
+      '1M': 29, // 30 days inclusive
+      '3M': 89, // 90 days inclusive
+      YTD: ytdDays - 1, // Inclusive from Jan 1 to today
+      '1Y': 364, // 365 days inclusive
+      '5Y': 1824, // 1825 days inclusive
+      ALL: 3649, // 3650 days inclusive
     };
 
     const historyResult = await AccountMetricsService.getAccountBalanceHistory(
@@ -535,10 +538,10 @@ export function AccountDetailsPage({
 
   /**
    * Handle time range change for performance chart
-   * Updates the historical data based on selected time range (1D, 1W, 1M, etc.)
+   * Updates the historical data based on selected time range (YTD, 1W, 1M, etc.)
    */
   const handleTimeRangeChange = async (
-    range: '1D' | '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL'
+    range: 'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   ) => {
     setTimeRange(range);
     // Reset the trigger flag and mark data as not loaded so it re-fetches with new range
@@ -891,10 +894,23 @@ export function AccountDetailsPage({
     const startPoint = historyData[0];
 
     // Calculate the change over the selected period
-    // Use current market value (not historical snapshot) vs start of period
-    const periodChange = currentMarketValue - startPoint.balance;
+    // Use metrics.marketValue as the current value (real-time accurate)
+    // Round to 2 decimal places first to ensure displayed values match the calculation
+    const roundedCurrentValue = Math.round(currentMarketValue * 100) / 100;
+    const roundedStartValue = Math.round(startPoint.holdings_value * 100) / 100;
+    const periodChange = roundedCurrentValue - roundedStartValue;
     const periodChangePercent =
-      startPoint.balance > 0 ? (periodChange / startPoint.balance) * 100 : 0;
+      roundedStartValue > 0 ? (periodChange / roundedStartValue) * 100 : 0;
+
+    console.log('[AccountDetailsPage] Period calculation:', {
+      timeRange,
+      metricsMarketValue: currentMarketValue,
+      roundedCurrentValue,
+      startPointValue: startPoint.holdings_value,
+      roundedStartValue,
+      periodChange,
+      periodChangeFormatted: formatCurrency(periodChange),
+    });
 
     // Calculate period-specific gains (difference between current and start period)
     const periodUnrealizedGain =
@@ -912,7 +928,7 @@ export function AccountDetailsPage({
       periodUnrealizedGain,
       periodRealizedGain,
     };
-  }, [historyData, metrics]);
+  }, [historyData, metrics, timeRange]);
 
   /**
    * Calculate dividend metrics (all-time and trailing 12-month)
@@ -1109,11 +1125,10 @@ export function AccountDetailsPage({
                     data={historyData}
                     timeRange={timeRange}
                     availableTimeRanges={[
-                      '1D',
+                      'YTD',
                       '1W',
                       '1M',
                       '3M',
-                      'YTD',
                       '1Y',
                       '5Y',
                       'ALL',
@@ -1122,6 +1137,7 @@ export function AccountDetailsPage({
                     refreshing={refreshing}
                     onTimeRangeChange={handleTimeRangeChange}
                     onRefresh={handleRefresh}
+                    currentValue={metrics?.marketValue}
                     extraButton={
                       <Button
                         onClick={handleSyncPrices}
@@ -1315,6 +1331,7 @@ export function AccountDetailsPage({
                           key={holding.id}
                           holding={holding}
                           displayMode={holdingsDisplayMode}
+                          onSelect={setSelectedHolding}
                         />
                       ))}
                     </div>
@@ -2010,6 +2027,12 @@ export function AccountDetailsPage({
           setShowSettings(false);
           onBack();
         }}
+      />
+
+      {/* Holding Detail Modal */}
+      <HoldingDetailModal
+        holding={selectedHolding}
+        onClose={() => setSelectedHolding(null)}
       />
     </div>
   );
