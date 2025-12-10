@@ -47,9 +47,8 @@ import { z } from 'zod';
 const envSchema = z.object({
   VITE_SUPABASE_URL: z.string().url('Invalid Supabase URL'),
   VITE_SUPABASE_ANON_KEY: z.string().min(1, 'Supabase anon key is required'),
-  VITE_ALPHA_VANTAGE_API_KEY: z
-    .string()
-    .min(1, 'Alpha Vantage API key is required'),
+  VITE_FINNHUB_API_KEY: z.string().min(1, 'Finnhub API key is required'),
+  VITE_ALPHA_VANTAGE_API_KEY: z.string().optional(),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
     .default('development'),
@@ -65,6 +64,7 @@ const envSchema = z.object({
 export const env = envSchema.parse({
   VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+  VITE_FINNHUB_API_KEY: import.meta.env.VITE_FINNHUB_API_KEY,
   VITE_ALPHA_VANTAGE_API_KEY: import.meta.env.VITE_ALPHA_VANTAGE_API_KEY,
   NODE_ENV: import.meta.env.NODE_ENV,
   VITE_DEBUG: import.meta.env.VITE_DEBUG,
@@ -85,9 +85,12 @@ export const config = {
     anonKey: env.VITE_SUPABASE_ANON_KEY,
   },
 
+  finnhub: {
+    apiKey: env.VITE_FINNHUB_API_KEY,
+  },
+
   alphaVantage: {
     apiKey: env.VITE_ALPHA_VANTAGE_API_KEY,
-    baseUrl: 'https://www.alphavantage.co/query',
   },
 
   // App Configuration

@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { AccountMetricsService } from '@/services/accountMetricsService';
 
 export interface PerformanceMetrics {
   totalValue: number;
   totalGain: number;
   totalGainPercent: number;
-  dayChange: number;
-  dayChangePercent: number;
+  dayChange: number; // Actually weekly change (keeping name for backward compatibility)
+  dayChangePercent: number; // Actually weekly change percent
   allTimeHigh: number;
   allTimeLow: number;
 }
@@ -137,69 +138,42 @@ export function useCachedAnalytics() {
 }
 
 /**
- * Calculate performance metrics
+ * Calculate performance metrics using account metrics service (same as charts)
  */
 async function calculatePerformance(userId: string): Promise<PerformanceMetrics | null> {
   try {
-    // Get latest snapshot
-    const { data: latestSnapshot, error: snapshotError } = await supabase
-      .from('portfolio_snapshots')
-      .select('*')
-      .eq('user_id', userId)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .single();
+    // Get 7 days of history (same as charts use for weekly data)
+    const historyResult = await AccountMetricsService.getPortfolioBalanceHistory(userId, 6); // 6 days back + today = 7 days
 
-    if (snapshotError && snapshotError.code !== 'PGRST116') {
-      throw snapshotError;
-    }
-
-    if (!latestSnapshot) {
+    if (!historyResult.data || historyResult.data.length === 0) {
       return null;
     }
 
-    // Get snapshot from yesterday for day change
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const history = historyResult.data;
+    const latestPoint = history[history.length - 1]; // Most recent (today)
+    const weekAgoPoint = history[0]; // 7 days ago
 
-    const { data: yesterdaySnapshot } = await supabase
-      .from('portfolio_snapshots')
-      .select('total_value')
-      .eq('user_id', userId)
-      .lte('snapshot_date', yesterdayStr)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .single();
-
-    // Get all-time high and low
-    const { data: allSnapshots } = await supabase
-      .from('portfolio_snapshots')
-      .select('total_value')
-      .eq('user_id', userId);
-
-    let allTimeHigh = latestSnapshot.total_value;
-    let allTimeLow = latestSnapshot.total_value;
-
-    if (allSnapshots) {
-      allTimeHigh = Math.max(...allSnapshots.map(s => s.total_value));
-      allTimeLow = Math.min(...allSnapshots.map(s => s.total_value));
-    }
-
-    const dayChange = yesterdaySnapshot
-      ? latestSnapshot.total_value - yesterdaySnapshot.total_value
+    // Calculate weekly change using holdings_value (matches portfolio chart)
+    const weeklyChange = latestPoint.holdings_value - weekAgoPoint.holdings_value;
+    const weeklyChangePercent = weekAgoPoint.holdings_value > 0
+      ? (weeklyChange / weekAgoPoint.holdings_value) * 100
       : 0;
 
-    const dayChangePercent = yesterdaySnapshot
-      ? (dayChange / yesterdaySnapshot.total_value) * 100
-      : 0;
+    // Get all-time history for high/low (use balance for net worth)
+    const allTimeResult = await AccountMetricsService.getPortfolioBalanceHistory(userId, 3649); // ~10 years
+    const allTimeHistory = allTimeResult.data || history;
+
+    const allTimeHigh = Math.max(...allTimeHistory.map(p => p.balance));
+    const allTimeLow = Math.min(...allTimeHistory.map(p => p.balance));
 
     return {
-      totalValue: latestSnapshot.total_value,
-      totalGain: latestSnapshot.total_gain || 0,
-      totalGainPercent: latestSnapshot.total_gain_percent || 0,
-      dayChange,
-      dayChangePercent,
+      totalValue: latestPoint.balance,
+      totalGain: latestPoint.unrealized_gain + latestPoint.realized_gain,
+      totalGainPercent: latestPoint.total_cost_basis > 0
+        ? ((latestPoint.unrealized_gain + latestPoint.realized_gain) / latestPoint.total_cost_basis) * 100
+        : 0,
+      dayChange: weeklyChange, // Actually weekly change (keeping name for backward compatibility)
+      dayChangePercent: weeklyChangePercent,
       allTimeHigh,
       allTimeLow,
     };
@@ -216,7 +190,7 @@ async function calculateAllocation(userId: string): Promise<AssetAllocation[]> {
   try {
     const { data: holdings, error } = await supabase
       .from('holdings')
-      .select('*, accounts!inner(asset_class)')
+      .select('*, accounts!inner(*)')
       .eq('user_id', userId);
 
     if (error) throw error;

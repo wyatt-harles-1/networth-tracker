@@ -96,18 +96,7 @@ export function AssetTypeFilter({
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Quick Action Buttons */}
-        <button
-          onClick={allSelected ? handleClearAll : handleSelectAll}
-          className="px-3 py-1.5 rounded-full text-xs font-medium border-2 border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
-        >
-          {allSelected ? 'Clear All' : 'Select All'}
-        </button>
-
-        {/* Divider */}
-        {assetTypeCounts.length > 0 && <div className="w-px h-6 bg-gray-300" />}
-
-        {assetTypeCounts.map(({ type, count }) => {
+        {assetTypeCounts.map(({ type }) => {
           const config = ASSET_TYPE_CONFIG[type] || {
             label: type,
             color: 'blue',
@@ -132,18 +121,6 @@ export function AssetTypeFilter({
             >
               <Icon className="w-4 h-4" />
               <span>{config.label}</span>
-              <span
-                className={`
-                ml-1 px-2 py-0.5 rounded-full text-xs font-semibold
-                ${
-                  isSelected
-                    ? 'bg-white/20 text-white'
-                    : 'bg-gray-100 text-gray-600'
-                }
-              `}
-              >
-                {count}
-              </span>
             </button>
           );
         })}

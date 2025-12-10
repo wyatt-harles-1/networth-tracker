@@ -21,6 +21,7 @@ export interface AccountBalanceHistoryPoint {
   total_cost_basis: number;
   unrealized_gain: number;
   realized_gain: number;
+  asset_type_breakdown?: Record<string, number>;
 }
 
 export class AccountMetricsService {
@@ -152,10 +153,10 @@ export class AccountMetricsService {
         return { data: [], error: null };
       }
 
-      // Get current holdings to use as fallback prices
+      // Get current holdings to use as fallback prices and asset types
       const { data: holdings, error: holdingsError } = await supabase
         .from('holdings')
-        .select('symbol, current_price')
+        .select('symbol, current_price, asset_type')
         .eq('account_id', accountId)
         .eq('user_id', userId);
 
@@ -164,6 +165,11 @@ export class AccountMetricsService {
       // Create a fallback price map for current holdings
       const fallbackPriceMap = new Map(
         (holdings || []).map(h => [h.symbol.toUpperCase(), Number(h.current_price)])
+      );
+
+      // Create an asset type map for symbols
+      const symbolAssetTypeMap = new Map(
+        (holdings || []).map(h => [h.symbol.toUpperCase(), h.asset_type])
       );
 
       // Get all unique symbols from transactions
@@ -257,6 +263,7 @@ export class AccountMetricsService {
         // Calculate holdings value for this date using historical prices
         let holdingsValue = 0;
         let totalCostBasis = 0;
+        const assetTypeBreakdown: Record<string, number> = {};
 
         for (const [symbol, holding] of holdingsOverTime.entries()) {
           if (holding.quantity > 0.00001) {
@@ -288,8 +295,13 @@ export class AccountMetricsService {
               }
             }
 
-            holdingsValue += holding.quantity * priceToUse;
+            const holdingValue = holding.quantity * priceToUse;
+            holdingsValue += holdingValue;
             totalCostBasis += holding.costBasis;
+
+            // Track value by asset type
+            const assetType = symbolAssetTypeMap.get(symbol) || 'stock';
+            assetTypeBreakdown[assetType] = (assetTypeBreakdown[assetType] || 0) + holdingValue;
           }
         }
 
@@ -307,6 +319,7 @@ export class AccountMetricsService {
             total_cost_basis: totalCostBasis,
             unrealized_gain: unrealizedGain,
             realized_gain: 0,
+            asset_type_breakdown: assetTypeBreakdown,
           });
         }
 
@@ -319,12 +332,18 @@ export class AccountMetricsService {
       const now = new Date();
       let currentHoldingsValue = 0;
       let currentTotalCostBasis = 0;
+      const currentAssetTypeBreakdown: Record<string, number> = {};
 
       for (const [symbol, holding] of holdingsOverTime.entries()) {
         if (holding.quantity > 0.00001) {
           const currentPrice = fallbackPriceMap.get(symbol) || lastKnownPrices.get(symbol) || 0;
-          currentHoldingsValue += holding.quantity * currentPrice;
+          const holdingValue = holding.quantity * currentPrice;
+          currentHoldingsValue += holdingValue;
           currentTotalCostBasis += holding.costBasis;
+
+          // Track value by asset type
+          const assetType = symbolAssetTypeMap.get(symbol) || 'stock';
+          currentAssetTypeBreakdown[assetType] = (currentAssetTypeBreakdown[assetType] || 0) + holdingValue;
         }
       }
 
@@ -340,6 +359,7 @@ export class AccountMetricsService {
         total_cost_basis: currentTotalCostBasis,
         unrealized_gain: currentUnrealizedGain,
         realized_gain: 0,
+        asset_type_breakdown: currentAssetTypeBreakdown,
       });
 
       console.log(`[AccountMetrics] ✅ Portfolio calculation complete!`);
@@ -669,6 +689,17 @@ export class AccountMetricsService {
               existing.total_cost_basis += point.total_cost_basis;
               existing.unrealized_gain += point.unrealized_gain;
               existing.realized_gain += point.realized_gain;
+
+              // Merge asset_type_breakdown
+              if (point.asset_type_breakdown) {
+                if (!existing.asset_type_breakdown) {
+                  existing.asset_type_breakdown = {};
+                }
+                for (const [assetType, value] of Object.entries(point.asset_type_breakdown)) {
+                  existing.asset_type_breakdown[assetType] =
+                    (existing.asset_type_breakdown[assetType] || 0) + value;
+                }
+              }
             } else {
               // First data point for this date
               historyByDate.set(point.snapshot_date, { ...point });

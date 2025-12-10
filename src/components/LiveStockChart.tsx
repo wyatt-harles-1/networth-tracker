@@ -442,11 +442,17 @@ export function LiveStockChart({
                 strokeDasharray="5 5"
                 strokeWidth={2}
                 label={{
-                  value: 'Avg Cost',
-                  position: 'right',
-                  fill: '#3b82f6',
-                  fontSize: 11,
-                  fontWeight: 600,
+                  value: `Pos: ${formatCurrency(averageCost)}`,
+                  position: 'insideTopRight',
+                  fill: '#1e3a8a',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  style: {
+                    backgroundColor: '#dbeafe',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  },
                 }}
               />
             )}

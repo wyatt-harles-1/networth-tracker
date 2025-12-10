@@ -19,8 +19,20 @@ export function UpcomingDividendsCard() {
       day: 'numeric',
     }),
     amount: formatCurrency(d.amount),
+    numericAmount: d.amount,
     fullDate: d.pay_date,
   }));
+
+  // Calculate monthly projection for current popup month
+  const calculateMonthlyProjection = () => {
+    const { year, month } = currentMonthData;
+    return upcomingDividends
+      .filter(d => {
+        const payDate = new Date(d.fullDate);
+        return payDate.getFullYear() === year && payDate.getMonth() === month;
+      })
+      .reduce((sum, d) => sum + d.numericAmount, 0);
+  };
 
   const getDividendsForDate = (dateStr: string) => {
     return upcomingDividends.filter(div => div.fullDate === dateStr);
@@ -69,6 +81,7 @@ export function UpcomingDividendsCard() {
 
   const currentMonthData = generateCalendarDays();
   const today = new Date();
+  const monthlyProjection = isPopupOpen ? calculateMonthlyProjection() : 0;
 
   const goToPreviousMonth = () => {
     setCurrentMonthOffset(prev => prev - 1);
@@ -117,32 +130,51 @@ export function UpcomingDividendsCard() {
         onClick={() => setIsPopupOpen(true)}
       >
         <div className="flex items-start justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900">
-            Upcoming Dividends
-          </h3>
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              Upcoming Dividends
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Next 30 days: {formatCurrency(upcomingDividends.slice(0, 10).reduce((sum, d) => sum + d.numericAmount, 0))}
+            </p>
+          </div>
           <div className="p-1.5 bg-blue-50 rounded-lg">
             <Calendar className="h-4 w-4 text-blue-600" />
           </div>
         </div>
         <div className="space-y-2">
-          {upcomingDividends.slice(0, 3).map((dividend, index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between py-1.5"
-            >
-              <div>
-                <p className="text-xs font-medium text-gray-900">
-                  {dividend.stock}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {dividend.date}
-                </p>
+          {upcomingDividends.slice(0, 3).map((dividend, index) => {
+            // Color-code by amount (larger = darker blue)
+            const isLargeAmount = dividend.numericAmount >= 50;
+            const isMediumAmount = dividend.numericAmount >= 20 && dividend.numericAmount < 50;
+
+            return (
+              <div
+                key={index}
+                className="flex items-center justify-between py-1.5"
+              >
+                <div>
+                  <p className="text-xs font-medium text-gray-900">
+                    {dividend.stock}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {dividend.date}
+                  </p>
+                </div>
+                <span
+                  className={`text-xs font-medium ${
+                    isLargeAmount
+                      ? 'text-blue-700'
+                      : isMediumAmount
+                        ? 'text-blue-600'
+                        : 'text-blue-500'
+                  }`}
+                >
+                  {dividend.amount}
+                </span>
               </div>
-              <span className="text-xs font-medium text-blue-600">
-                {dividend.amount}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
@@ -151,9 +183,14 @@ export function UpcomingDividendsCard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Dividend Calendar
-              </h3>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Dividend Calendar
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {currentMonthData.name} • {formatCurrency(monthlyProjection)} projected
+                </p>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -329,26 +366,6 @@ export function UpcomingDividendsCard() {
                   </div>
                 </div>
               )}
-              <div className="space-y-2">
-                {upcomingDividends.map((dividend, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {dividend.stock}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {dividend.date}
-                      </p>
-                    </div>
-                    <span className="text-sm font-medium text-blue-600">
-                      {dividend.amount}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </div>

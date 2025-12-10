@@ -340,8 +340,8 @@ export class PortfolioValueCalculationService {
         .from('account_balance_history')
         .select('realized_gain')
         .eq('user_id', userId)
-        .lte('balance_date', date)
-        .order('balance_date', { ascending: false })
+        .lte('snapshot_date', date)
+        .order('snapshot_date', { ascending: false })
         .limit(1)
         .maybeSingle();
 

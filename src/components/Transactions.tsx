@@ -44,6 +44,9 @@ import {
   ArrowUp,
   ArrowDown,
   Check,
+  Edit,
+  Trash2,
+  Info,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -72,6 +75,12 @@ export function Transactions() {
   const [sortBy, setSortBy] = useState<
     'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
   >('date-desc');
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [showInfoPopup, setShowInfoPopup] = useState(false);
+  const [activeTab, setActiveTab] = useState<'list' | 'analytics'>('list');
 
   // Hooks
   const {
@@ -132,6 +141,57 @@ export function Transactions() {
   const handleAddNew = () => {
     setEditingTransaction(undefined);
     setShowWizard(true);
+  };
+
+  /**
+   * Toggle selection for bulk delete
+   */
+  const toggleSelection = (transactionId: string) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
+
+  /**
+   * Delete multiple selected transactions
+   */
+  const handleDeleteSelected = async () => {
+    if (selectedTransactions.size === 0) return;
+
+    const confirmMessage = `Delete ${selectedTransactions.size} transaction${selectedTransactions.size > 1 ? 's' : ''}?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    for (const transactionId of selectedTransactions) {
+      await deleteTransaction(transactionId);
+    }
+
+    setIsEditMode(false);
+    setSelectedTransactions(new Set());
+    refetch();
+  };
+
+  /**
+   * Cancel edit mode
+   */
+  const handleCancelEditMode = () => {
+    setIsEditMode(false);
+    setSelectedTransactions(new Set());
+  };
+
+  /**
+   * Delete single transaction from swipe
+   */
+  const handleDeleteSingleTransaction = async (transactionId: string) => {
+    if (!window.confirm('Are you sure you want to delete this transaction?')) {
+      return;
+    }
+    await deleteTransaction(transactionId);
   };
 
   /**
@@ -283,18 +343,60 @@ export function Transactions() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">
-              Portfolio Activity
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              View and analyze all your transactions across accounts
-            </p>
-          </div>
+          <h2 className="text-xl font-bold text-gray-900">
+            Portfolio Activity
+          </h2>
+
+          {/* Edit/Info buttons (only on list tab) */}
+          {activeTab === 'list' && (
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowInfoPopup(true)}
+                size="sm"
+                variant="ghost"
+                className="text-gray-500 hover:text-gray-700"
+                title="Help"
+              >
+                <Info className="h-4 w-4" />
+              </Button>
+              {!isEditMode ? (
+                <Button onClick={() => setIsEditMode(true)} size="sm" variant="outline">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleDeleteSelected}
+                    size="sm"
+                    disabled={selectedTransactions.size === 0}
+                    className="bg-red-600 hover:bg-red-700 text-white disabled:bg-gray-300"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete ({selectedTransactions.size})
+                  </Button>
+                  <Button onClick={handleCancelEditMode} size="sm" variant="outline">
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="list" className="w-full">
+        <Tabs
+          defaultValue="list"
+          className="w-full"
+          onValueChange={(value) => {
+            setActiveTab(value as 'list' | 'analytics');
+            // Exit edit mode when switching away from list tab
+            if (value !== 'list' && isEditMode) {
+              setIsEditMode(false);
+              setSelectedTransactions(new Set());
+            }
+          }}
+        >
           <TabsList className="grid w-full h-full grid-cols-2 bg-gray-200">
             <TabsTrigger
               value="list"
@@ -355,7 +457,10 @@ export function Transactions() {
               transactions={filteredTransactions}
               loading={loading}
               error={error}
-              deleteTransaction={deleteTransaction}
+              deleteTransaction={handleDeleteSingleTransaction}
+              isEditMode={isEditMode}
+              selectedTransactions={selectedTransactions}
+              onToggleSelection={toggleSelection}
             />
           </TabsContent>
           <TabsContent value="analytics" className="mt-4 space-y-6">
@@ -458,6 +563,59 @@ export function Transactions() {
           accounts={accounts}
           editingTransaction={editingTransaction}
         />
+      )}
+
+      {/* Info Popup */}
+      {showInfoPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md bg-white rounded-xl shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Info className="h-5 w-5 text-blue-600" />
+                <h3 className="text-lg font-bold text-gray-900">How to Use</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowInfoPopup(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-blue-50">
+                    <Edit className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Edit Transaction</p>
+                    <p className="text-sm text-gray-600">Swipe card left to reveal edit button</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-red-50">
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Delete Transaction</p>
+                    <p className="text-sm text-gray-600">Swipe card right to reveal delete button</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-gray-100">
+                    <Edit className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Bulk Delete</p>
+                    <p className="text-sm text-gray-600">Click "Edit" in header to select multiple transactions</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Filter Popup Modal */}

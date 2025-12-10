@@ -1,26 +1,32 @@
+import { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Edit,
-  Trash2,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-} from 'lucide-react';
+import { Edit, Trash2 } from 'lucide-react';
 import { formatCurrency, parseLocalDate } from '@/lib/utils';
 import { Transaction } from '@/types/transaction';
 
 interface TransactionCardProps {
   transaction: Transaction;
-  onEdit: (transaction: Transaction) => void;
-  onDelete: (transactionId: string) => void;
+  isEditMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
+  onEdit?: (transaction: Transaction) => void;
+  onDelete?: (transactionId: string) => void;
 }
 
 export function TransactionCard({
   transaction,
+  isEditMode = false,
+  isSelected = false,
+  onToggleSelection,
   onEdit,
   onDelete,
 }: TransactionCardProps) {
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const startXRef = useRef(0);
+  const currentXRef = useRef(0);
+  const cardRef = useRef<HTMLDivElement>(null);
   const metadata = transaction.transaction_metadata || {};
 
   // Extract Transaction properties with type-safe checks
@@ -39,70 +45,6 @@ export function TransactionCard({
       ? (transaction['transaction_date'] as string)
       : '';
 
-  const getTransactionIcon = (type: string) => {
-    const lowerType = type.toLowerCase();
-
-    // Portfolio gains (positive transactions) - up arrow
-    if (
-      lowerType.includes('buy') ||
-      lowerType.includes('deposit') ||
-      lowerType.includes('dividend') ||
-      lowerType.includes('interest') ||
-      lowerType.includes('coupon') ||
-      lowerType.includes('stake') ||
-      lowerType.includes('mature') ||
-      lowerType.includes('exercise') ||
-      lowerType.includes('split')
-    ) {
-      return <TrendingUp className="w-3.5 h-3.5" />;
-    }
-
-    // Portfolio losses (negative transactions) - down arrow
-    if (
-      lowerType.includes('sell') ||
-      lowerType.includes('withdrawal') ||
-      lowerType.includes('fee') ||
-      lowerType.includes('expire')
-    ) {
-      return <TrendingDown className="w-3.5 h-3.5" />;
-    }
-
-    // Neutral/other transactions
-    return <DollarSign className="w-3.5 h-3.5" />;
-  };
-
-  const getTransactionColor = (type: string) => {
-    const lowerType = type.toLowerCase();
-
-    // Portfolio gains (positive transactions) - green
-    if (
-      lowerType.includes('buy') ||
-      lowerType.includes('deposit') ||
-      lowerType.includes('dividend') ||
-      lowerType.includes('interest') ||
-      lowerType.includes('coupon') ||
-      lowerType.includes('stake') ||
-      lowerType.includes('mature') ||
-      lowerType.includes('exercise') ||
-      lowerType.includes('split')
-    ) {
-      return 'text-green-700 bg-green-50';
-    }
-
-    // Portfolio losses (negative transactions) - red
-    if (
-      lowerType.includes('sell') ||
-      lowerType.includes('withdrawal') ||
-      lowerType.includes('fee') ||
-      lowerType.includes('expire')
-    ) {
-      return 'text-red-700 bg-red-50';
-    }
-
-    // Neutral/other transactions - gray
-    return 'text-gray-600 bg-gray-100';
-  };
-
   const isPositive = [
     'stock_buy',
     'etf_buy',
@@ -120,15 +62,114 @@ export function TransactionCard({
 
   const displayAmount = Math.abs(Number(amount));
 
+  // Swipe handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isEditMode) return;
+    startXRef.current = e.touches[0].clientX;
+    setIsDragging(true);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditMode) return;
+    startXRef.current = e.clientX;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || isEditMode) return;
+    currentXRef.current = e.touches[0].clientX;
+    const diff = currentXRef.current - startXRef.current;
+    // Limit swipe to 80px in either direction
+    const limitedDiff = Math.max(-80, Math.min(80, diff));
+    setSwipeOffset(limitedDiff);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || isEditMode) return;
+    currentXRef.current = e.clientX;
+    const diff = currentXRef.current - startXRef.current;
+    const limitedDiff = Math.max(-80, Math.min(80, diff));
+    setSwipeOffset(limitedDiff);
+  };
+
+  const handleEnd = () => {
+    setIsDragging(false);
+    // Snap to position based on swipe distance
+    if (swipeOffset > 40) {
+      setSwipeOffset(80); // Snap to reveal edit
+    } else if (swipeOffset < -40) {
+      setSwipeOffset(-80); // Snap to reveal delete
+    } else {
+      setSwipeOffset(0); // Snap back to center
+    }
+  };
+
+  // Reset swipe when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setSwipeOffset(0);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!transactionId) return null;
 
   return (
-    <Card
-      key={transactionId}
-      className="p-4 bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+    <div
+      ref={cardRef}
+      className="relative overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleEnd}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleEnd}
+      onMouseLeave={handleEnd}
     >
-      <div className="flex items-center justify-between w-full">
-        {/* Left: Ticker and Transaction Type */}
+      {/* Left action (Delete) - revealed when swiping right */}
+      <button
+        onClick={() => {
+          if (onDelete) {
+            onDelete(transactionId);
+            setSwipeOffset(0);
+          }
+        }}
+        className="absolute left-0 top-0 bottom-0 w-20 flex items-center justify-center bg-red-50 hover:bg-red-100 transition-colors"
+      >
+        <Trash2 className="h-4 w-4 text-red-500" />
+      </button>
+
+      {/* Right action (Edit) - revealed when swiping left */}
+      <button
+        onClick={() => {
+          if (onEdit) {
+            onEdit(transaction);
+            setSwipeOffset(0);
+          }
+        }}
+        className="absolute right-0 top-0 bottom-0 w-20 flex items-center justify-center bg-blue-50 hover:bg-blue-100 transition-colors"
+      >
+        <Edit className="h-4 w-4 text-blue-500" />
+      </button>
+
+      {/* Main card content */}
+      <Card
+        key={transactionId}
+        onClick={isEditMode ? onToggleSelection : undefined}
+        style={{ transform: `translateX(${swipeOffset}px)` }}
+        className={`p-4 shadow-sm transition-all ${
+          isSelected
+            ? 'bg-blue-50 border-blue-500 border-2 shadow-md'
+            : 'bg-white border-gray-200 hover:shadow-md'
+        } ${isEditMode ? 'cursor-pointer' : ''} ${
+          isDragging ? '' : 'duration-300'
+        }`}
+      >
+        <div className="flex items-center justify-between w-full">
+        {/* Left: Ticker and Date */}
         <div className="flex flex-col w-24">
           {metadata.ticker ? (
             <span className="text-sm font-semibold px-2 py-1 bg-blue-100 rounded text-blue-700 text-center">
@@ -139,12 +180,6 @@ export function TransactionCard({
               {description.substring(0, 10)}
             </p>
           )}
-          <span
-            className={`text-xs px-2 py-1 rounded text-center mt-1 flex items-center justify-center gap-1 ${getTransactionColor(transactionType)}`}
-          >
-            {getTransactionIcon(transactionType)}
-            <span className="truncate">{transactionType.replace(/_/g, ' ')}</span>
-          </span>
           <span className="text-xs text-gray-500 px-2 text-center mt-1">
             {transactionDate
               ? parseLocalDate(transactionDate).toLocaleDateString('en-US', {
@@ -176,40 +211,19 @@ export function TransactionCard({
           )}
         </div>
 
-        {/* Right: Amount and Actions */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="text-right">
-            <p
-              className={`text-base font-bold ${
-                isPositive ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {isPositive ? '+' : '-'}
-              {formatCurrency(displayAmount)}
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEdit(transaction)}
-              className="h-8 w-8 p-0 hover:bg-blue-50"
-              title="Edit transaction"
-            >
-              <Edit className="h-4 w-4 text-blue-600" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(transactionId)}
-              className="h-8 w-8 p-0 hover:bg-red-50"
-              title="Delete transaction"
-            >
-              <Trash2 className="h-4 w-4 text-red-500" />
-            </Button>
-          </div>
+        {/* Right: Amount */}
+        <div className="text-right">
+          <p
+            className={`text-base font-bold ${
+              isPositive ? 'text-green-600' : 'text-red-600'
+            }`}
+          >
+            {isPositive ? '+' : '-'}
+            {formatCurrency(displayAmount)}
+          </p>
         </div>
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

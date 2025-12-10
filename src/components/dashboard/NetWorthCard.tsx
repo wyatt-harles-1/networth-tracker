@@ -7,7 +7,7 @@
  *
  * Features:
  * - Current net worth display
- * - Day-over-day or period percentage change
+ * - Week-over-week percentage change
  * - Toggle visibility to hide/show amounts
  * - Refresh button to update data
  * - Click to navigate to portfolio page
@@ -64,11 +64,11 @@ export function NetWorthCard({ onNavigateToPortfolio }: NetWorthCardProps) {
   const { portfolio, loading: portfolioLoading } = usePortfolioCalculations();
   const { getNetWorthHistory } = usePortfolioSnapshots();
 
-  const history = getNetWorthHistory(30);
+  const history = getNetWorthHistory(7);
   const fallbackPercentageChange =
     history.length >= 2
-      ? ((portfolio.netWorth - history[0].netWorth) /
-          Math.abs(history[0].netWorth)) *
+      ? ((portfolio.netWorth - history[history.length - 1].netWorth) /
+          Math.abs(history[history.length - 1].netWorth)) *
         100
       : 0;
 
@@ -138,7 +138,7 @@ export function NetWorthCard({ onNavigateToPortfolio }: NetWorthCardProps) {
             className={`text-xs font-medium ${percentageChange >= 0 ? 'text-blue-600' : 'text-red-600'}`}
           >
             {percentageChange >= 0 ? '+' : ''}
-            {percentageChange.toFixed(1)}% today
+            {percentageChange.toFixed(2)}% this week
           </span>
         </div>
         {lastUpdated && (

@@ -11,6 +11,9 @@ interface TransactionListNewProps {
   loading?: boolean;
   error?: string | null;
   deleteTransaction?: (id: string) => Promise<{ error: string | null }>;
+  isEditMode?: boolean;
+  selectedTransactions?: Set<string>;
+  onToggleSelection?: (id: string) => void;
 }
 
 export function TransactionListNew({
@@ -20,6 +23,9 @@ export function TransactionListNew({
   loading: loadingProp,
   error: errorProp,
   deleteTransaction: deleteTransactionProp,
+  isEditMode = false,
+  selectedTransactions = new Set(),
+  onToggleSelection,
 }: TransactionListNewProps) {
   // Always call the hook (React rules), but prefer props when provided
   const hookData = useTransactions(accountId);
@@ -88,6 +94,9 @@ export function TransactionListNew({
                 transaction={transaction}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                isEditMode={isEditMode}
+                isSelected={selectedTransactions.has(transactionId)}
+                onToggleSelection={onToggleSelection ? () => onToggleSelection(transactionId) : undefined}
               />
             );
           })}

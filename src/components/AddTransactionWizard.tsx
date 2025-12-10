@@ -58,6 +58,7 @@ import {
   Sparkles,
   Wallet,
   LucideIcon,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,6 +73,7 @@ import {
   TransactionInsert,
   Transaction,
 } from '@/types/transaction';
+import { detectAssetType, getAssetTypeName } from '@/lib/tickerDetection';
 
 // Icons for each transaction category
 const categoryIcons: Record<TransactionCategory, LucideIcon> = {
@@ -119,6 +121,7 @@ interface AddTransactionWizardProps {
   defaultAccountId?: string;
   accounts: Account[];
   editingTransaction?: Transaction;
+  prefilledSymbol?: string;
 }
 
 export function AddTransactionWizard({
@@ -127,15 +130,17 @@ export function AddTransactionWizard({
   defaultAccountId,
   accounts,
   editingTransaction,
+  prefilledSymbol,
 }: AddTransactionWizardProps) {
-  const [currentStep, setCurrentStep] = useState(defaultAccountId ? 1 : 1);
+  const [entryMode, setEntryMode] = useState<'quick' | 'guided'>('quick'); // Start with quick entry
+  const [currentStep, setCurrentStep] = useState(editingTransaction || prefilledSymbol ? 1 : 0); // Start at mode selection unless editing or prefilled
   const [category, setCategory] = useState<TransactionCategory | null>(null);
   const [transactionType, setTransactionType] = useState('');
   const [selectedAccount, setSelectedAccount] = useState(
     defaultAccountId || ''
   );
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [ticker, setTicker] = useState('');
+  const [ticker, setTicker] = useState(prefilledSymbol || '');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
@@ -145,8 +150,13 @@ export function AddTransactionWizard({
   const [dividendAmount, setDividendAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDetectingAsset, setIsDetectingAsset] = useState(false);
+  const [detectedAssetType, setDetectedAssetType] = useState<string | null>(null);
 
-  const totalSteps = defaultAccountId ? 5 : 6;
+  // Calculate total steps based on mode and whether defaultAccountId is present
+  const totalSteps = editingTransaction
+    ? (defaultAccountId ? 5 : 6)
+    : (defaultAccountId ? 5 : 6); // Same for now, but mode selection doesn't count as a step
 
   /**
    * Populate form fields when editing an existing transaction
@@ -231,9 +241,49 @@ export function AddTransactionWizard({
    * Get step title and description based on current step
    */
   const getStepInfo = () => {
-    // When defaultAccountId exists: steps are 1-5 (skip account selection)
-    // When no defaultAccountId: steps are 1-6 (include account selection)
+    // Mode selection step (step 0)
+    if (currentStep === 0) {
+      return { title: 'Choose Entry Mode', description: 'Select how you want to add your transaction' };
+    }
 
+    // Quick entry mode
+    if (entryMode === 'quick') {
+      if (defaultAccountId) {
+        switch (currentStep) {
+          case 1:
+            return { title: 'Enter Ticker Symbol', description: 'We\'ll automatically detect the asset type' };
+          case 2:
+            return { title: 'Transaction Type', description: 'Select the specific type of transaction' };
+          case 3:
+            return { title: 'Transaction Date', description: 'When did this transaction occur?' };
+          case 4:
+            return { title: 'Transaction Details', description: 'Enter quantity, price, and any fees' };
+          case 5:
+            return { title: 'Review & Submit', description: 'Review and add any notes' };
+          default:
+            return { title: '', description: '' };
+        }
+      } else {
+        switch (currentStep) {
+          case 1:
+            return { title: 'Enter Ticker Symbol', description: 'We\'ll automatically detect the asset type' };
+          case 2:
+            return { title: 'Transaction Type', description: 'Select the specific type of transaction' };
+          case 3:
+            return { title: 'Select Account', description: 'Choose which account this transaction belongs to' };
+          case 4:
+            return { title: 'Transaction Date', description: 'When did this transaction occur?' };
+          case 5:
+            return { title: 'Transaction Details', description: 'Enter quantity, price, and any fees' };
+          case 6:
+            return { title: 'Review & Submit', description: 'Review and add any notes' };
+          default:
+            return { title: '', description: '' };
+        }
+      }
+    }
+
+    // Guided entry mode (original flow)
     if (defaultAccountId) {
       // Steps 1-5 without account selection
       switch (currentStep) {
@@ -301,6 +351,28 @@ export function AddTransactionWizard({
     setDividendAmount('');
   };
 
+  /**
+   * Handle ticker input change and auto-detect asset type
+   */
+  const handleTickerChange = async (newTicker: string) => {
+    setTicker(newTicker);
+
+    // Only auto-detect in quick entry mode and when ticker is valid
+    if (entryMode === 'quick' && newTicker.trim().length >= 1) {
+      setIsDetectingAsset(true);
+      const result = await detectAssetType(newTicker);
+      setIsDetectingAsset(false);
+
+      if (result.category) {
+        setCategory(result.category);
+        setDetectedAssetType(result.assetType);
+      } else {
+        setCategory(null);
+        setDetectedAssetType(null);
+      }
+    }
+  };
+
   const handleSubmit = async () => {
     if (!transactionType || !date || !totalAmount) {
       return;
@@ -364,7 +436,44 @@ export function AddTransactionWizard({
   };
 
   const canProceedFromStep = (step: number): boolean => {
+    // Quick entry mode
+    if (entryMode === 'quick') {
+      switch (step) {
+        case 0:
+          return true; // Can always proceed from mode selection
+        case 1:
+          return ticker.trim() !== '' && category !== null; // Must have ticker and detected category
+        case 2:
+          return transactionType !== '';
+        case 3:
+          return !defaultAccountId ? selectedAccount !== '' : true;
+        case 4:
+          if (defaultAccountId) {
+            return date !== '';
+          } else {
+            return date !== '';
+          }
+        case 5:
+          if (defaultAccountId) {
+            if (needsQuantity && requiredFields.includes('quantity')) {
+              return totalAmount !== '' && quantity !== '' && price !== '';
+            }
+            return totalAmount !== '';
+          } else {
+            if (needsQuantity && requiredFields.includes('quantity')) {
+              return totalAmount !== '' && quantity !== '' && price !== '';
+            }
+            return totalAmount !== '';
+          }
+        default:
+          return true;
+      }
+    }
+
+    // Guided entry mode (original logic)
     switch (step) {
+      case 0:
+        return true; // Can always proceed from mode selection
       case 1:
         return category !== null;
       case 2:
@@ -375,6 +484,10 @@ export function AddTransactionWizard({
         if (defaultAccountId) {
           // This is the date & ticker step for accounts with defaultAccountId
           if (needsTicker && requiredFields.includes('ticker')) {
+            // If symbol is prefilled, only require date
+            if (prefilledSymbol) {
+              return date !== '';
+            }
             return date !== '' && ticker.trim() !== '';
           }
           return date !== '';
@@ -516,49 +629,181 @@ export function AddTransactionWizard({
             </Button>
           </div>
 
-          {/* Progress Bar */}
-          <div className="px-6 pt-4 pb-4 border-b border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              {Array.from({ length: totalSteps }, (_, i) => i + 1).map(step => (
-                <div key={step} className="flex items-center flex-1">
-                  <div
-                    className={cn(
-                      'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all',
-                      step === currentStep
-                        ? 'bg-blue-600 text-white scale-110'
-                        : step < currentStep
-                          ? 'bg-green-600 text-white'
-                          : 'bg-gray-200 text-gray-600'
-                    )}
-                  >
-                    {step < currentStep ? <Check className="w-4 h-4" /> : step}
-                  </div>
-                  {step < totalSteps && (
+          {/* Progress Bar - only show if not on mode selection */}
+          {currentStep > 0 && (
+            <div className="px-6 pt-4 pb-4 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                {Array.from({ length: totalSteps }, (_, i) => i + 1).map(step => (
+                  <div key={step} className="flex items-center flex-1">
                     <div
                       className={cn(
-                        'flex-1 h-1 mx-2 transition-all',
-                        step < currentStep ? 'bg-green-600' : 'bg-gray-200'
+                        'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all',
+                        step === currentStep
+                          ? 'bg-blue-600 text-white scale-110'
+                          : step < currentStep
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-200 text-gray-600'
                       )}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
+                    >
+                      {step < currentStep ? <Check className="w-4 h-4" /> : step}
+                    </div>
+                    {step < totalSteps && (
+                      <div
+                        className={cn(
+                          'flex-1 h-1 mx-2 transition-all',
+                          step < currentStep ? 'bg-green-600' : 'bg-gray-200'
+                        )}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
 
-            {/* Step Description */}
-            <div className="text-center pt-6 pb-4">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                {stepInfo.title}
-              </h3>
-              <p className="text-gray-600">{stepInfo.description}</p>
+              {/* Step Description */}
+              <div className="text-center pt-6 pb-4">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                  {stepInfo.title}
+                </h3>
+                <p className="text-gray-600">{stepInfo.description}</p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Mode selection step - show title without progress bar */}
+          {currentStep === 0 && (
+            <div className="px-6 pt-4 pb-4 border-b border-gray-100">
+              <div className="text-center pt-6 pb-4">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                  {stepInfo.title}
+                </h3>
+                <p className="text-gray-600">{stepInfo.description}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Category Selection */}
-          {currentStep === 1 && (
+          {/* Step 0: Entry Mode Selection (only on first load, not when editing) */}
+          {!editingTransaction && currentStep === 0 && (
+            <div className="space-y-6 animate-in slide-in-from-right duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card
+                  onClick={() => {
+                    setEntryMode('quick');
+                    setCurrentStep(1);
+                  }}
+                  className="p-6 cursor-pointer transition-all hover:shadow-lg border-2 border-blue-600 bg-blue-50"
+                >
+                  <div className="text-center space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center mx-auto">
+                      <Zap className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Quick Entry</h3>
+                    <p className="text-sm text-gray-600">
+                      Enter a ticker symbol and let us auto-detect the asset type
+                    </p>
+                    <div className="pt-2">
+                      <span className="inline-block px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-full">
+                        Recommended
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card
+                  onClick={() => {
+                    setEntryMode('guided');
+                    setCurrentStep(1);
+                  }}
+                  className="p-6 cursor-pointer transition-all hover:shadow-md border-2 border-gray-200 hover:border-gray-300"
+                >
+                  <div className="text-center space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto">
+                      <Sparkles className="w-8 h-8 text-gray-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Guided Entry</h3>
+                    <p className="text-sm text-gray-600">
+                      Manually select category and transaction type step-by-step
+                    </p>
+                    <div className="pt-2">
+                      <span className="inline-block px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-full">
+                        Traditional
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Entry Flow */}
+          {entryMode === 'quick' && currentStep === 1 && (
+            <div className="space-y-6 animate-in slide-in-from-right duration-300">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="quickTicker" className="text-sm font-medium text-gray-900">
+                    Ticker Symbol <span className="text-red-600">*</span>
+                  </Label>
+                  <div className="relative">
+                    <TickerAutocomplete
+                      value={ticker}
+                      onChange={handleTickerChange}
+                      placeholder="e.g., AAPL, SPY, BTC-USD"
+                    />
+                    {isDetectingAsset && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    We'll automatically detect the asset type
+                  </p>
+                </div>
+
+                {/* Show detected asset type */}
+                {detectedAssetType && category && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-5 h-5 text-green-600" />
+                      <div>
+                        <p className="text-sm font-semibold text-green-900">
+                          Detected: {getAssetTypeName(detectedAssetType as any)}
+                        </p>
+                        <p className="text-xs text-green-700">
+                          Category: {TRANSACTION_CATEGORIES[category]}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Show option to switch to guided mode if detection failed */}
+                {ticker.trim().length > 0 && !category && !isDetectingAsset && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-900 mb-2">
+                      Unable to auto-detect asset type for "{ticker.toUpperCase()}"
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEntryMode('guided');
+                        setCurrentStep(1);
+                      }}
+                      className="text-xs"
+                    >
+                      Switch to Guided Entry
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 1: Category Selection (Guided Mode Only) */}
+          {entryMode === 'guided' && currentStep === 1 && (
             <div className="space-y-4 animate-in slide-in-from-right duration-300">
               <div className="grid grid-cols-2 gap-3">
                 {Object.entries(TRANSACTION_CATEGORIES).map(([key, label]) => {
@@ -664,6 +909,24 @@ export function AddTransactionWizard({
           {currentStep === (defaultAccountId ? 3 : 4) && (
             <div className="space-y-6 animate-in slide-in-from-right duration-300">
               <div className="space-y-4">
+                {/* Show selected account when defaultAccountId is provided */}
+                {defaultAccountId && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-900">
+                      Account
+                    </Label>
+                    <div className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {accounts.find(a => a.id === defaultAccountId)?.name ||
+                          'Selected Account'}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Transaction will be added to this account
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <Label
                     htmlFor="date"
@@ -684,7 +947,7 @@ export function AddTransactionWizard({
                   </div>
                 </div>
 
-                {needsTicker && (
+                {needsTicker && !prefilledSymbol && (
                   <div>
                     <Label
                       htmlFor="ticker"
@@ -697,11 +960,27 @@ export function AddTransactionWizard({
                     </Label>
                     <TickerAutocomplete
                       value={ticker}
-                      onChange={setTicker}
+                      onChange={handleTickerChange}
                       placeholder="e.g., AAPL, MSFT, BTC"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Enter the stock, ETF, or crypto symbol
+                    </p>
+                  </div>
+                )}
+
+                {needsTicker && prefilledSymbol && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-900">
+                      Ticker Symbol
+                    </Label>
+                    <div className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {prefilledSymbol}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Symbol is pre-selected for this holding
                     </p>
                   </div>
                 )}
@@ -1098,11 +1377,11 @@ export function AddTransactionWizard({
         <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
           <Button
             variant="outline"
-            onClick={currentStep === 1 ? onClose : handleBack}
+            onClick={currentStep === 0 || currentStep === 1 ? onClose : handleBack}
             disabled={isSubmitting}
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            {currentStep === 1 ? 'Cancel' : 'Back'}
+            {currentStep === 0 || currentStep === 1 ? 'Cancel' : 'Back'}
           </Button>
 
           <Button

@@ -3,7 +3,7 @@
  * Matches AccountDetailsModal styling exactly
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   X,
   TrendingUp,
@@ -16,18 +16,28 @@ import {
   BarChart3,
   DollarSign,
   ArrowLeft,
-  Settings,
+  Search,
+  Filter,
+  Edit,
+  Trash2,
+  Info,
+  Database,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { SymbolPriceHistoryService } from '@/services/symbolPriceHistoryService';
+import { HistoricalPriceService } from '@/services/historicalPriceService';
+import { TickerDirectoryService } from '@/services/tickerDirectoryService';
+import { getStockInfo, getStockLogoUrl } from '@/lib/stockInfo';
 import { LiveStockChart } from './LiveStockChart';
 import { useTransactions } from '@/hooks/useTransactions';
 import { TransactionCard } from './TransactionCard';
-import { Transaction } from '@/types/transaction';
+import { Transaction, TransactionInsert, TRANSACTION_TYPES } from '@/types/transaction';
 import { AddTransactionWizard } from './AddTransactionWizard';
 
 interface Holding {
@@ -43,6 +53,14 @@ interface Holding {
   account_id?: string;
 }
 
+interface Account {
+  id: string;
+  name: string;
+  account_type: string;
+  category: string;
+  icon: string;
+}
+
 interface HoldingDetailModalProps {
   holding: Holding | null;
   isOpen?: boolean;
@@ -56,6 +74,9 @@ export function HoldingDetailModal({
   onClose,
   onAddTransaction,
 }: HoldingDetailModalProps) {
+  // Early return BEFORE any hooks to maintain consistent hook order
+  if (!holding) return null;
+
   const { user } = useAuth();
   const [priceHistory, setPriceHistory] = useState<
     Array<{ snapshot_date: string; holdings_value: number }>
@@ -65,21 +86,136 @@ export function HoldingDetailModal({
     'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   >('3M');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncMessageFadingOut, setSyncMessageFadingOut] = useState(false);
   const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
   const [showTransactionWizard, setShowTransactionWizard] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  // Transaction filtering state
+  const [transactionSearchQuery, setTransactionSearchQuery] = useState('');
+  const [showTransactionFilterPopup, setShowTransactionFilterPopup] = useState(false);
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<string>('all');
+  const [transactionDateRange, setTransactionDateRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('all');
+  const [transactionSortBy, setTransactionSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [showInfoPopup, setShowInfoPopup] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
+
+  // Data completeness tracking
+  const [dataCompleteness, setDataCompleteness] = useState<{
+    available: number;
+    expected: number;
+    percentage: number;
+  } | null>(null);
+
+  // Price sync state
+  const [syncingPrices, setSyncingPrices] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<string>('');
+
+  // Company info state
+  const [companyName, setCompanyName] = useState<string>('');
+  const [companyLogo, setCompanyLogo] = useState<string>('');
 
   // Fetch transactions for the holding's account
   const {
     transactions,
     loading: transactionsLoading,
     deleteTransaction,
+    refetch: refetchTransactions,
   } = useTransactions(holding?.account_id);
+
+  // Helper function to show sync messages with smooth fade-out
+  const showSyncMessage = (message: string, duration: number = 3000) => {
+    setSyncMessageFadingOut(false);
+    setSyncMessage(message);
+
+    // Start fade-out animation before removing
+    setTimeout(() => {
+      setSyncMessageFadingOut(true);
+    }, duration - 700); // Start fade 700ms before removal (matching animation duration)
+
+    // Remove message after fade completes
+    setTimeout(() => {
+      setSyncMessage(null);
+      setSyncMessageFadingOut(false);
+    }, duration);
+  };
+
+  // Fetch accounts for transaction wizard
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('id, name, account_type, category, icon')
+        .eq('user_id', user.id)
+        .order('name');
+
+      if (error) {
+        console.error('[HoldingDetailModal] Error fetching accounts:', error);
+        return;
+      }
+
+      setAccounts(data || []);
+    };
+
+    fetchAccounts();
+  }, [user]);
+
+  // Fetch company name and logo
+  useEffect(() => {
+    const fetchCompanyInfo = async () => {
+      if (!holding) return;
+
+      console.log(`[HoldingDetailModal] 🔍 Fetching company info for ${holding.symbol}`);
+
+      // Strategy 1: Check local stock info mapping (instant, no API calls)
+      const stockInfo = getStockInfo(holding.symbol);
+      if (stockInfo) {
+        setCompanyName(stockInfo.name);
+        console.log(`[HoldingDetailModal] ✅ Found in local mapping: ${stockInfo.name}`);
+      }
+
+      // Strategy 2: Try ticker directory (database lookup)
+      if (!stockInfo) {
+        try {
+          const tickerResult = await TickerDirectoryService.searchTickers(holding.symbol, 1);
+
+          if (tickerResult.length > 0 && tickerResult[0].symbol === holding.symbol.toUpperCase()) {
+            setCompanyName(tickerResult[0].name);
+            console.log(`[HoldingDetailModal] ✅ Found in ticker directory: ${tickerResult[0].name}`);
+          } else {
+            console.log(`[HoldingDetailModal] ℹ️ Not found in ticker directory`);
+          }
+        } catch (error) {
+          console.warn(`[HoldingDetailModal] ⚠️ Ticker directory error:`, error);
+        }
+      }
+
+      // Always set logo using IEX Cloud (reliable, free, no API key needed)
+      const logoUrl = getStockLogoUrl(holding.symbol);
+      setCompanyLogo(logoUrl);
+      console.log(`[HoldingDetailModal] 🎨 Using logo URL: ${logoUrl}`);
+    };
+
+    if (isOpen && holding) {
+      // Reset state when opening new holding
+      setCompanyName('');
+      setCompanyLogo('');
+      fetchCompanyInfo();
+    }
+  }, [isOpen, holding]);
 
   const loadPriceData = useCallback(async () => {
     if (!user || !holding) return;
 
     console.log('[HoldingDetailModal] Loading price history...');
-    setSyncMessage('Loading price history...');
+    showSyncMessage('Loading price history...', 30000); // Show during loading
 
     try {
       setLoading(true);
@@ -151,13 +287,31 @@ export function HoldingDetailModal({
 
       console.log('[HoldingDetailModal] Final chart data points:', chartData.length);
 
+      // Calculate data completeness
+      // If we added today's data point (or replaced it), count it as available
+      const todayIsAvailable = (lastPointDate === today || holding.current_price) ? 1 : 0;
+      const availablePoints = data.length + todayIsAvailable; // Historical data + today (if available)
+      const expectedPoints = dataPoints;
+      const percentage = Math.min(100, Math.round((availablePoints / expectedPoints) * 100));
+
+      setDataCompleteness({
+        available: availablePoints,
+        expected: expectedPoints,
+        percentage,
+      });
+
+      console.log('[HoldingDetailModal] Data completeness:', {
+        available: availablePoints,
+        expected: expectedPoints,
+        todayIsAvailable,
+        percentage: `${percentage}%`,
+      });
+
       setPriceHistory(chartData);
-      setSyncMessage('Price history loaded successfully');
-      setTimeout(() => setSyncMessage(null), 3000);
+      showSyncMessage('Price history loaded successfully', 3000);
     } catch (err) {
       console.error('[HoldingDetailModal] Error loading price history:', err);
-      setSyncMessage('Error loading price history');
-      setTimeout(() => setSyncMessage(null), 5000);
+      showSyncMessage('Error loading price history', 5000);
     } finally {
       setLoading(false);
     }
@@ -189,12 +343,117 @@ export function HoldingDetailModal({
     if (!user || !holding) return;
 
     console.log('[HoldingDetailModal] Manual refresh triggered...');
-    setSyncMessage('Refreshing price data...');
+    showSyncMessage('Refreshing price data...', 30000); // Show during refresh
     setHasAutoLoaded(false); // Force reload
     await loadPriceData();
   };
 
-  if (!holding) return null;
+  /**
+   * Sync historical prices for this specific symbol
+   * Fetches missing historical data from Alpha Vantage
+   */
+  const handleSyncPrices = async () => {
+    if (!user || !holding) return;
+
+    setSyncingPrices(true);
+    setSyncProgress('Fetching historical prices...');
+
+    console.log(`[HoldingDetailModal] 🎯 Syncing prices for ${holding.symbol}`);
+
+    try {
+      // Use backfillHistoricalPrices to fetch data for just this symbol
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 365); // 1 year back
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = new Date().toISOString().split('T')[0];
+
+      const result = await HistoricalPriceService.backfillHistoricalPrices(
+        [holding.symbol],
+        startDateStr,
+        endDateStr
+      );
+
+      if (result.success && result.pricesAdded > 0) {
+        console.log(`[HoldingDetailModal] ✅ Added ${result.pricesAdded} prices for ${holding.symbol}`);
+        setSyncProgress(`Added ${result.pricesAdded} historical prices`);
+
+        // Reload the chart data
+        setHasAutoLoaded(false);
+        await loadPriceData();
+
+        setTimeout(() => {
+          setSyncProgress('');
+          showSyncMessage('Historical data updated successfully!', 3000);
+        }, 1000);
+      } else if (result.success && result.pricesAdded === 0) {
+        setSyncProgress('Data already up to date');
+        setTimeout(() => {
+          setSyncProgress('');
+          showSyncMessage('Historical data is complete', 3000);
+        }, 1000);
+      } else {
+        const errorMsg = result.errors.join(', ');
+        console.error(`[HoldingDetailModal] ❌ Sync failed:`, errorMsg);
+        setSyncProgress('');
+        showSyncMessage(`Sync failed: ${errorMsg}`, 5000);
+      }
+    } catch (err) {
+      console.error('[HoldingDetailModal] ❌ Sync error:', err);
+      setSyncProgress('');
+      showSyncMessage('Error syncing prices. Check console for details.', 5000);
+    } finally {
+      setSyncingPrices(false);
+    }
+  };
+
+  // Selection mode handlers
+  const toggleSelection = (transactionId: string) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedTransactions.size === 0) return;
+
+    const confirmMessage = `Delete ${selectedTransactions.size} transaction${selectedTransactions.size > 1 ? 's' : ''}?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    console.log('[HoldingDetailModal] Deleting selected transactions:', selectedTransactions);
+
+    // Delete all selected transactions
+    for (const transactionId of selectedTransactions) {
+      await deleteTransaction(transactionId);
+    }
+
+    // Exit edit mode and clear selection
+    setIsEditMode(false);
+    setSelectedTransactions(new Set());
+    refetchTransactions();
+  };
+
+  const handleCancelEditMode = () => {
+    setIsEditMode(false);
+    setSelectedTransactions(new Set());
+  };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setShowTransactionWizard(true);
+  };
+
+  const handleDeleteSingleTransaction = async (transactionId: string) => {
+    if (!window.confirm('Are you sure you want to delete this transaction?')) {
+      return;
+    }
+    await deleteTransaction(transactionId);
+  };
 
   // Calculate metrics
   const quantity = Number(holding.quantity);
@@ -227,16 +486,103 @@ export function HoldingDetailModal({
     return ticker && ticker.toUpperCase() === holding.symbol.toUpperCase();
   });
 
-  const handleEditTransaction = (transaction: Transaction) => {
-    // TODO: Implement edit transaction
-    console.log('Edit transaction:', transaction);
-  };
+  // Check if transaction filters are active
+  const hasActiveTransactionFilters =
+    transactionTypeFilter !== 'all' ||
+    transactionDateRange !== 'all' ||
+    transactionSortBy !== 'date-desc';
 
-  const handleDeleteTransaction = async (transactionId: string) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) {
-      return;
+  // Filtered and sorted transactions
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...holdingTransactions];
+
+    // Search filter
+    if (transactionSearchQuery) {
+      filtered = filtered.filter(t => {
+        const description = t.description?.toLowerCase() || '';
+        const ticker = t.transaction_metadata?.ticker?.toLowerCase() || '';
+        const query = transactionSearchQuery.toLowerCase();
+        return description.includes(query) || ticker.includes(query);
+      });
     }
-    await deleteTransaction(transactionId);
+
+    // Type filter
+    if (transactionTypeFilter !== 'all') {
+      filtered = filtered.filter(t => t.transaction_type === transactionTypeFilter);
+    }
+
+    // Date range filter
+    if (transactionDateRange !== 'all') {
+      const now = new Date();
+      const cutoffDate = new Date();
+
+      switch (transactionDateRange) {
+        case '7d':
+          cutoffDate.setDate(now.getDate() - 7);
+          break;
+        case '30d':
+          cutoffDate.setDate(now.getDate() - 30);
+          break;
+        case '90d':
+          cutoffDate.setDate(now.getDate() - 90);
+          break;
+        case '1y':
+          cutoffDate.setFullYear(now.getFullYear() - 1);
+          break;
+      }
+
+      filtered = filtered.filter(t => {
+        const transactionDate = new Date(t.transaction_date);
+        return transactionDate >= cutoffDate;
+      });
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      switch (transactionSortBy) {
+        case 'date-desc':
+          return new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime();
+        case 'date-asc':
+          return new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime();
+        case 'amount-desc':
+          return Math.abs(b.amount) - Math.abs(a.amount);
+        case 'amount-asc':
+          return Math.abs(a.amount) - Math.abs(b.amount);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [holdingTransactions, transactionSearchQuery, transactionTypeFilter, transactionDateRange, transactionSortBy]);
+
+  const handleAddTransaction = async (
+    transactionData: Partial<TransactionInsert>
+  ) => {
+    if (!user || !holding.account_id) {
+      return { error: 'Missing user or account information' };
+    }
+
+    try {
+      const { error } = await supabase.from('transactions').insert({
+        ...transactionData,
+        user_id: user.id,
+        account_id: holding.account_id,
+      });
+
+      if (error) {
+        console.error('[HoldingDetailModal] Error adding transaction:', error);
+        return { error: error.message };
+      }
+
+      // Refetch transactions to show the new one
+      await refetchTransactions();
+      setShowTransactionWizard(false);
+      return {};
+    } catch (err) {
+      console.error('[HoldingDetailModal] Exception adding transaction:', err);
+      return { error: 'Failed to add transaction' };
+    }
   };
 
   if (!isOpen || !holding) return null;
@@ -259,12 +605,36 @@ export function HoldingDetailModal({
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
                 <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl shadow-lg bg-gradient-to-br from-blue-500 to-cyan-600">
-                    <BarChart3 className="h-6 w-6 text-white" />
-                  </div>
+                  {/* Company Logo or Default Icon */}
+                  {companyLogo ? (
+                    <div className="w-12 h-12 rounded-xl shadow-lg bg-white flex items-center justify-center overflow-hidden">
+                      <img
+                        src={companyLogo}
+                        alt={`${holding.symbol} logo`}
+                        className="w-full h-full object-contain p-1"
+                        onError={(e) => {
+                          // Fallback to default icon if logo fails to load
+                          e.currentTarget.style.display = 'none';
+                          const parent = e.currentTarget.parentElement;
+                          if (parent) {
+                            parent.innerHTML = '<div class="p-3 rounded-xl shadow-lg bg-gradient-to-br from-blue-500 to-cyan-600"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg></div>';
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl shadow-lg bg-gradient-to-br from-blue-500 to-cyan-600">
+                      <BarChart3 className="h-6 w-6 text-white" />
+                    </div>
+                  )}
                   <div>
-                    <h1 className="text-xl font-bold text-gray-900">
+                    <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                       {holding.symbol}
+                      {companyName && (
+                        <span className="text-sm font-normal text-gray-500">
+                          • {companyName}
+                        </span>
+                      )}
                     </h1>
                     <p className="text-sm text-gray-500 flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
@@ -275,17 +645,41 @@ export function HoldingDetailModal({
                 </div>
               </div>
 
-              {/* Right: Action buttons */}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {/* TODO: Add settings */}}
-                  title="Holding settings"
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </div>
+              {/* Right: Info/Edit/Delete/Cancel buttons (only on transactions tab) */}
+              {activeTab === 'transactions' && (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setShowInfoPopup(true)}
+                    size="sm"
+                    variant="ghost"
+                    className="text-gray-500 hover:text-gray-700"
+                    title="Help"
+                  >
+                    <Info className="h-4 w-4" />
+                  </Button>
+                  {!isEditMode ? (
+                    <Button onClick={() => setIsEditMode(true)} size="sm" variant="outline">
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={handleDeleteSelected}
+                        size="sm"
+                        disabled={selectedTransactions.size === 0}
+                        className="bg-red-600 hover:bg-red-700 text-white disabled:bg-gray-300"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete ({selectedTransactions.size})
+                      </Button>
+                      <Button onClick={handleCancelEditMode} size="sm" variant="outline">
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -294,15 +688,20 @@ export function HoldingDetailModal({
         <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
             {/* Sync Message */}
             {syncMessage && (
-              <Card
-                className={`p-4 ${
-                  syncMessage.includes('Failed') ||
-                  syncMessage.includes('error') ||
-                  syncMessage.includes('Error')
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-green-50 border-green-200'
+              <div
+                className={`transition-all duration-700 ease-in-out overflow-hidden ${
+                  syncMessageFadingOut ? 'max-h-0 opacity-0 mb-0' : 'max-h-32 opacity-100 mb-4'
                 }`}
               >
+                <Card
+                  className={`p-4 ${
+                    syncMessage.includes('Failed') ||
+                    syncMessage.includes('error') ||
+                    syncMessage.includes('Error')
+                      ? 'bg-red-50 border-red-200'
+                      : 'bg-green-50 border-green-200'
+                  }`}
+                >
                 <div className="flex items-center gap-2">
                   {syncMessage.includes('Failed') ||
                   syncMessage.includes('error') ||
@@ -324,10 +723,22 @@ export function HoldingDetailModal({
                   </p>
                 </div>
               </Card>
+            </div>
             )}
 
             {/* Tabs */}
-            <Tabs defaultValue="performance" className="w-full">
+            <Tabs
+              defaultValue="performance"
+              className="w-full"
+              onValueChange={(value) => {
+                setActiveTab(value as 'overview' | 'transactions');
+                // Exit edit mode when switching away from transactions tab
+                if (value !== 'transactions' && isEditMode) {
+                  setIsEditMode(false);
+                  setSelectedTransactions(new Set());
+                }
+              }}
+            >
               <TabsList className="grid w-full grid-cols-2 bg-gray-200">
                 <TabsTrigger
                   value="performance"
@@ -345,7 +756,7 @@ export function HoldingDetailModal({
 
               <TabsContent value="performance" className="space-y-4 mt-4">
                 {/* Price Chart */}
-                <Card className="p-6 bg-white border-gray-200 shadow-md">
+                <div>
                   {/* Header with Stock Price */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-2">
@@ -406,6 +817,53 @@ export function HoldingDetailModal({
                     ))}
                   </div>
 
+                  {/* Data Completeness Indicator */}
+                  {dataCompleteness && dataCompleteness.percentage < 100 && (
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <span className="text-xs font-medium text-amber-900">
+                            Historical Data: {dataCompleteness.percentage}% Complete
+                          </span>
+                        </div>
+                        <Button
+                          onClick={handleSyncPrices}
+                          disabled={syncingPrices}
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs border-amber-400 text-amber-700 hover:bg-amber-100"
+                          title="Fetch missing historical price data"
+                        >
+                          <Database
+                            className={`h-3 w-3 mr-1 ${syncingPrices ? 'animate-pulse' : ''}`}
+                          />
+                          {syncingPrices ? 'Syncing...' : 'Sync Prices'}
+                        </Button>
+                      </div>
+                      <div className="w-full bg-amber-200 rounded-full h-2 overflow-hidden mb-2">
+                        <div
+                          className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${dataCompleteness.percentage}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-amber-700">
+                          Missing {dataCompleteness.expected - dataCompleteness.available} days of price data
+                        </p>
+                        <span className="text-xs text-amber-600 font-medium">
+                          {dataCompleteness.available} / {dataCompleteness.expected} days
+                        </span>
+                      </div>
+                      {syncProgress && (
+                        <p className="text-xs text-amber-800 font-medium mt-2 flex items-center gap-1">
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          {syncProgress}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
@@ -440,7 +898,7 @@ export function HoldingDetailModal({
                       averageCost={avgCost}
                     />
                   )}
-                </Card>
+                </div>
 
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
@@ -620,15 +1078,52 @@ export function HoldingDetailModal({
 
               <TabsContent value="transactions" className="space-y-3 mt-4">
                 {/* Add Transaction Button */}
-                <div className="flex justify-end">
-                  <Button
-                    onClick={() => setShowTransactionWizard(true)}
-                    size="lg"
-                    className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all"
-                  >
-                    <Plus className="h-5 w-5 mr-2" />
-                    Add Transaction
-                  </Button>
+                <Button
+                  onClick={() => setShowTransactionWizard(true)}
+                  size="lg"
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Add Transaction
+                </Button>
+
+                {/* Search and filter toolbar */}
+                <div className="py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Search input */}
+                    <div className="relative flex-1 max-w-2xl">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <Input
+                        type="text"
+                        placeholder="Search transactions..."
+                        value={transactionSearchQuery}
+                        onChange={e => setTransactionSearchQuery(e.target.value)}
+                        className="pl-10 pr-10 h-11 text-base"
+                      />
+                      {transactionSearchQuery && (
+                        <button
+                          onClick={() => setTransactionSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter button with active indicator */}
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      onClick={() => setShowTransactionFilterPopup(!showTransactionFilterPopup)}
+                      className="relative"
+                    >
+                      <Filter className="h-4 w-4 mr-2" />
+                      Filters
+                      {hasActiveTransactionFilters && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 rounded-full" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
                 {transactionsLoading ? (
@@ -657,14 +1152,40 @@ export function HoldingDetailModal({
                       </Button>
                     </div>
                   </Card>
+                ) : filteredTransactions.length === 0 ? (
+                  <Card className="p-12 bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 shadow-sm">
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-gray-900 mb-2">
+                        No transactions match your filters
+                      </p>
+                      <p className="text-xs text-gray-500 mb-4">
+                        Try adjusting your search or filters
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setTransactionSearchQuery('');
+                          setTransactionTypeFilter('all');
+                          setTransactionDateRange('all');
+                          setTransactionSortBy('date-desc');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+                  </Card>
                 ) : (
                   <div className="space-y-2">
-                    {holdingTransactions.map(transaction => (
+                    {filteredTransactions.map(transaction => (
                       <TransactionCard
                         key={transaction.id}
                         transaction={transaction}
+                        isEditMode={isEditMode}
+                        isSelected={selectedTransactions.has(transaction.id)}
+                        onToggleSelection={() => toggleSelection(transaction.id)}
                         onEdit={handleEditTransaction}
-                        onDelete={handleDeleteTransaction}
+                        onDelete={handleDeleteSingleTransaction}
                       />
                     ))}
                   </div>
@@ -677,11 +1198,237 @@ export function HoldingDetailModal({
       {/* Transaction Wizard */}
       {showTransactionWizard && holding.account_id && (
         <AddTransactionWizard
-          accountId={holding.account_id}
-          isOpen={showTransactionWizard}
-          onClose={() => setShowTransactionWizard(false)}
+          onClose={() => {
+            setShowTransactionWizard(false);
+            setEditingTransaction(null);
+          }}
+          onSubmit={handleAddTransaction}
+          defaultAccountId={holding.account_id}
+          accounts={accounts}
           prefilledSymbol={holding.symbol}
+          editingTransaction={editingTransaction || undefined}
         />
+      )}
+
+      {/* Info Popup */}
+      {showInfoPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md bg-white rounded-xl shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Info className="h-5 w-5 text-blue-600" />
+                <h3 className="text-lg font-bold text-gray-900">How to Use</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowInfoPopup(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-blue-50">
+                    <Edit className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Edit Transaction</p>
+                    <p className="text-sm text-gray-600">Swipe card left to reveal edit button</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-red-50">
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Delete Transaction</p>
+                    <p className="text-sm text-gray-600">Swipe card right to reveal delete button</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 rounded-lg bg-gray-100">
+                    <Edit className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Bulk Delete</p>
+                    <p className="text-sm text-gray-600">Click "Edit" in header to select multiple transactions</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Transaction Filter Popup Modal */}
+      {showTransactionFilterPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md bg-white rounded-xl shadow-2xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Filter className="h-5 w-5 text-blue-600" />
+                <h3 className="text-lg font-bold text-gray-900">Filters</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTransactionFilterPopup(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Modal content */}
+            <div className="p-6 space-y-4">
+              {/* Transaction type filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-2 block">
+                  Transaction Type
+                </label>
+                <select
+                  value={transactionTypeFilter}
+                  onChange={e => setTransactionTypeFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-sm"
+                >
+                  <option value="all">All Types</option>
+                  {TRANSACTION_TYPES.map(type => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date range filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-2 block">
+                  Date Range
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { value: '7d', label: 'Last 7 days' },
+                    { value: '30d', label: 'Last 30 days' },
+                    { value: '90d', label: 'Last 90 days' },
+                    { value: '1y', label: 'Last year' },
+                    { value: 'all', label: 'All time' },
+                  ].map(option => (
+                    <Card
+                      key={option.value}
+                      onClick={() =>
+                        setTransactionDateRange(
+                          option.value as '7d' | '30d' | '90d' | '1y' | 'all'
+                        )
+                      }
+                      className={`p-3 cursor-pointer transition-all border-2 ${
+                        transactionDateRange === option.value
+                          ? 'border-blue-600 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-900">
+                          {option.label}
+                        </span>
+                        {transactionDateRange === option.value && (
+                          <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                        )}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sort by filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-2 block">
+                  Sort By
+                </label>
+                <div className="space-y-2">
+                  {[
+                    {
+                      value: 'date-desc',
+                      label: 'Date (Newest First)',
+                      icon: TrendingDown,
+                    },
+                    {
+                      value: 'date-asc',
+                      label: 'Date (Oldest First)',
+                      icon: TrendingUp,
+                    },
+                    {
+                      value: 'amount-desc',
+                      label: 'Amount (High to Low)',
+                      icon: TrendingDown,
+                    },
+                    {
+                      value: 'amount-asc',
+                      label: 'Amount (Low to High)',
+                      icon: TrendingUp,
+                    },
+                  ].map(option => {
+                    const IconComponent = option.icon;
+                    return (
+                      <Card
+                        key={option.value}
+                        onClick={() =>
+                          setTransactionSortBy(
+                            option.value as
+                              | 'date-desc'
+                              | 'date-asc'
+                              | 'amount-desc'
+                              | 'amount-asc'
+                          )
+                        }
+                        className={`p-3 cursor-pointer transition-all border-2 ${
+                          transactionSortBy === option.value
+                            ? 'border-blue-600 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <IconComponent className="h-4 w-4 text-gray-600" />
+                            <span className="text-sm font-medium text-gray-900">
+                              {option.label}
+                            </span>
+                          </div>
+                          {transactionSortBy === option.value && (
+                            <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setTransactionTypeFilter('all');
+                  setTransactionDateRange('all');
+                  setTransactionSortBy('date-desc');
+                }}
+              >
+                Reset All
+              </Button>
+              <Button
+                onClick={() => setShowTransactionFilterPopup(false)}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Apply
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );

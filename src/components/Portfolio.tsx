@@ -304,9 +304,36 @@ export function PortfolioReal() {
     }
   };
 
-  // Calculate portfolio metrics from history data
+  // Filter historical data by selected asset types
+  const filteredHistoryData = useMemo(() => {
+    if (selectedAssetTypes.size === 0 || historyData.length === 0) {
+      // No filtering - show all data
+      return historyData;
+    }
+
+    // Filter each data point to only include selected asset types
+    return historyData.map(point => {
+      if (!point.asset_type_breakdown) {
+        // No breakdown available - return original point
+        return point;
+      }
+
+      // Sum values for selected asset types
+      let filteredValue = 0;
+      for (const assetType of selectedAssetTypes) {
+        filteredValue += point.asset_type_breakdown[assetType] || 0;
+      }
+
+      return {
+        ...point,
+        holdings_value: filteredValue,
+      };
+    });
+  }, [historyData, selectedAssetTypes]);
+
+  // Calculate portfolio metrics from filtered history data
   const portfolioMetrics = useMemo(() => {
-    if (historyData.length === 0) {
+    if (filteredHistoryData.length === 0) {
       return {
         currentValue: 0,
         startValue: 0,
@@ -337,27 +364,27 @@ export function PortfolioReal() {
       }, 0);
     }
 
-    const startValue = historyData[0].holdings_value;
+    const startValue = filteredHistoryData[0].holdings_value;
     const change = currentValue - startValue;
     const changePercent = startValue > 0 ? (change / startValue) * 100 : 0;
 
     // Calculate period high and low from history (all data for now)
-    const values = historyData.map(d => d.holdings_value);
+    const values = filteredHistoryData.map(d => d.holdings_value);
     const periodHigh = Math.max(...values);
     const periodLow = Math.min(...values);
 
     // Calculate gain change over the selected time period
     const startGain =
-      (historyData[0].unrealized_gain || 0) +
-      (historyData[0].realized_gain || 0);
+      (filteredHistoryData[0].unrealized_gain || 0) +
+      (filteredHistoryData[0].realized_gain || 0);
     const currentGain =
-      (historyData[historyData.length - 1].unrealized_gain || 0) +
-      (historyData[historyData.length - 1].realized_gain || 0);
+      (filteredHistoryData[filteredHistoryData.length - 1].unrealized_gain || 0) +
+      (filteredHistoryData[filteredHistoryData.length - 1].realized_gain || 0);
     const gainChange = currentGain - startGain;
 
     // Calculate gain percentage based on current cost basis
     const currentCostBasis =
-      historyData[historyData.length - 1].total_cost_basis || 0;
+      filteredHistoryData[filteredHistoryData.length - 1].total_cost_basis || 0;
     const gainChangePercent =
       currentCostBasis > 0 ? (currentGain / currentCostBasis) * 100 : 0;
 
@@ -373,7 +400,7 @@ export function PortfolioReal() {
       gainChangePercent,
       isGainPositive: gainChange >= 0,
     };
-  }, [historyData, selectedAssetTypes, holdings]);
+  }, [filteredHistoryData, selectedAssetTypes, holdings]);
 
   // Calculate available asset types from holdings
   const availableAssetTypes = useMemo(() => {
@@ -493,7 +520,7 @@ export function PortfolioReal() {
         {/* Portfolio Performance Chart */}
         <PerformanceChartContainer
           title="Portfolio Performance"
-          data={historyData}
+          data={filteredHistoryData}
           timeRange={timeRange}
           availableTimeRanges={[
             'YTD',
@@ -600,7 +627,7 @@ export function PortfolioReal() {
                 </div>
                 <div className="flex items-start justify-between">
                   <p className="text-4xl font-bold text-gray-900">
-                    {formatCurrency(portfolioMetricsData?.marketValue || 0)}
+                    {formatCurrency(portfolioMetrics.currentValue)}
                   </p>
                   <div className="flex flex-col items-end gap-1">
                     <div

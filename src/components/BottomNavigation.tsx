@@ -29,28 +29,40 @@ export function BottomNavigation() {
   };
 
   return (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
-      <div className="flex items-center justify-around py-2 px-4 safe-area-pb">
-        {navigationItems.map(item => {
-          const Icon = item.icon;
-          const isActive = location.pathname === item.path;
+    <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none">
+      <div className="flex justify-center pb-6 px-6 safe-area-pb">
+        <div className="bg-white/80 backdrop-blur-xl border border-gray-200/50 rounded-full shadow-lg pointer-events-auto max-w-md">
+          <div className="flex items-center justify-around px-1 py-2 gap-0.5">
+            {navigationItems.map(item => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => handleNavigation(item.path)}
-              className={cn(
-                'flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors min-w-0',
-                isActive
-                  ? 'text-blue-600'
-                  : 'text-gray-500'
-              )}
-            >
-              <Icon className="h-6 w-6 mb-1" />
-              <span className="text-xs font-medium truncate">{item.label}</span>
-            </button>
-          );
-        })}
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigation(item.path)}
+                  className={cn(
+                    'flex flex-col items-center justify-center py-1 px-4 rounded-full transition-all duration-200 min-w-0',
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  )}
+                >
+                  <Icon className={cn(
+                    "h-5 w-5 transition-transform duration-200",
+                    isActive && "scale-110"
+                  )} />
+                  <span className={cn(
+                    "text-[9px] font-medium truncate mt-0.5",
+                    isActive && "font-semibold"
+                  )}>
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

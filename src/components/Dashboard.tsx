@@ -15,7 +15,8 @@
  *
  * Dashboard Cards:
  * - NetWorthCard: Current total net worth and change
- * - RecentActivityCard: Recent transactions and trades
+ * - GoalProgressCard: Retirement goal progress tracker
+ * - DividendIncomeSummaryCard: Monthly dividend income summary
  * - TopGainersLosersCard: Best and worst performing holdings
  * - UpcomingDividendsCard: Expected dividend payments
  * - ReconciliationSuggestionsCard: Account balance discrepancies
@@ -32,10 +33,11 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { NetWorthCard } from './dashboard/NetWorthCard';
-import { RecentActivityCardNew as RecentActivityCard } from './dashboard/RecentActivityCard';
 import { TopGainersLosersCardNew as TopGainersLosersCard } from './dashboard/TopGainersLosersCard';
 import { UpcomingDividendsCard } from './dashboard/UpcomingDividendsCard';
 import { ReconciliationSuggestionsCard } from './dashboard/ReconciliationSuggestionsCard';
+import { DividendIncomeSummaryCard } from './dashboard/DividendIncomeSummaryCard';
+import { GoalProgressCard } from './dashboard/GoalProgressCard';
 
 /**
  * Dashboard page component
@@ -155,8 +157,9 @@ export function Dashboard() {
         >
           <ReconciliationSuggestionsCard />
           <NetWorthCard onNavigateToPortfolio={() => navigate('/portfolio')} />
-          <RecentActivityCard />
           <TopGainersLosersCard />
+          <GoalProgressCard />
+          <DividendIncomeSummaryCard />
           <UpcomingDividendsCard />
         </div>
       </div>

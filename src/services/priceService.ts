@@ -6,26 +6,26 @@
  * Fetches real-time and historical price data for stocks, ETFs, and crypto.
  *
  * Data Sources:
- * - Stocks/ETFs: Alpha Vantage API
- * - Cryptocurrency: CoinGecko API (via CryptoPriceService)
+ * - Stocks/ETFs/Crypto: Yahoo Finance API (primary)
+ * - Cryptocurrency: CoinGecko API (fallback for crypto)
  *
  * Features:
  * - Current price fetching for any symbol
  * - Historical price data (OHLC - Open, High, Low, Close)
  * - Automatic crypto detection and routing
  * - Price caching in database
- * - Rate limit handling
+ * - No rate limits (Yahoo Finance)
  * - Error handling for invalid symbols
  *
  * API Limits:
- * - Alpha Vantage: 5 calls per minute, 500 per day (free tier)
- * - CoinGecko: 50 calls per minute (free tier)
+ * - Yahoo Finance: No official limits (reasonable use)
+ * - CoinGecko: 50 calls per minute (free tier, fallback only)
  *
  * Price Data Structure:
  * - symbol: Ticker symbol
  * - price: Current price
  * - date: Price date
- * - source: Data provider (alpha_vantage, coingecko)
+ * - source: Data provider (yahoo_finance, coingecko)
  *
  * Usage:
  * ```tsx
@@ -36,15 +36,15 @@
  * }
  *
  * // Get historical prices
- * const history = await PriceService.getHistoricalPrices('AAPL', '1M');
+ * const history = await PriceService.getHistoricalPrices('AAPL', '1mo');
  * ```
  *
  * ============================================================================
  */
 
 import { supabase } from '@/lib/supabase';
-import { config } from '@/config/env';
 import { CryptoPriceService } from './cryptoPriceService';
+import { AlphaVantageService, AlphaVantageOutputSize } from './alphaVantageService';
 
 /**
  * Current price data structure
@@ -69,73 +69,67 @@ export interface HistoricalPrice {
 }
 
 export class PriceService {
+  /**
+   * Get current price for a symbol
+   * Uses Finnhub as primary source, falls back to CoinGecko for crypto
+   */
   static async getCurrentPrice(
     symbol: string
   ): Promise<{ data: PriceData | null; error: string | null }> {
-    if (CryptoPriceService.isCryptocurrency(symbol)) {
-      const cryptoResult = await CryptoPriceService.getCurrentPrice(symbol);
-      if (cryptoResult.data) {
-        return {
-          data: {
-            symbol: cryptoResult.data.symbol,
-            price: cryptoResult.data.price,
-            date: cryptoResult.data.lastUpdated.split('T')[0],
-            source: 'coingecko',
-          },
-          error: null,
-        };
-      }
-      return { data: null, error: cryptoResult.error };
-    }
-
     try {
-      const url = new URL(config.alphaVantage.baseUrl);
-      url.searchParams.append('function', 'GLOBAL_QUOTE');
-      url.searchParams.append('symbol', symbol);
-      url.searchParams.append('apikey', config.alphaVantage.apiKey);
+      // Try Finnhub first for all symbols
+      const { FinnhubService } = await import('./finnhubService');
+      const finnhubResult = await FinnhubService.getQuote(symbol);
 
-      const response = await fetch(url.toString());
-      const data = await response.json();
+      if (finnhubResult.data) {
+        const priceData: PriceData = {
+          symbol: finnhubResult.data.symbol,
+          price: finnhubResult.data.price,
+          date: new Date().toISOString().split('T')[0],
+          source: 'finnhub',
+        };
 
-      if (data['Error Message']) {
-        throw new Error(`Invalid symbol: ${symbol}`);
-      }
-
-      if (data['Note']) {
-        throw new Error(
-          'API call frequency limit reached. Please wait a minute and try again.'
+        // Store price in history for caching
+        await this.storePriceInHistory(
+          symbol,
+          priceData.date,
+          finnhubResult.data.open || finnhubResult.data.price,
+          finnhubResult.data.high || finnhubResult.data.price,
+          finnhubResult.data.low || finnhubResult.data.price,
+          finnhubResult.data.price,
+          undefined,
+          'finnhub'
         );
+
+        return { data: priceData, error: null };
       }
 
-      const quote = data['Global Quote'];
-      if (!quote || !quote['05. price']) {
-        const storedPrice = await this.getLatestStoredPrice(symbol);
-        if (storedPrice.data) {
-          return storedPrice;
+      // Fallback to CoinGecko for crypto if Yahoo fails
+      if (CryptoPriceService.isCryptocurrency(symbol)) {
+        const cryptoResult = await CryptoPriceService.getCurrentPrice(symbol);
+        if (cryptoResult.data) {
+          return {
+            data: {
+              symbol: cryptoResult.data.symbol,
+              price: cryptoResult.data.price,
+              date: cryptoResult.data.lastUpdated.split('T')[0],
+              source: 'coingecko',
+            },
+            error: null,
+          };
         }
-        throw new Error(`No price data available for ${symbol}`);
+        return { data: null, error: cryptoResult.error };
       }
 
-      const priceData: PriceData = {
-        symbol: symbol.toUpperCase(),
-        price: parseFloat(quote['05. price']),
-        date: quote['07. latest trading day'],
-        source: 'alpha_vantage',
-      };
+      // If all else fails, try to get cached price from database
+      const storedPrice = await this.getLatestStoredPrice(symbol);
+      if (storedPrice.data) {
+        return storedPrice;
+      }
 
-      await this.storePriceInHistory(
-        symbol,
-        priceData.date,
-        parseFloat(quote['02. open']),
-        parseFloat(quote['03. high']),
-        parseFloat(quote['04. low']),
-        parseFloat(quote['05. price']),
-        parseInt(quote['06. volume']),
-        'alpha_vantage'
-      );
-
-      return { data: priceData, error: null };
+      return { data: null, error: finnhubResult.error || `No price data available for ${symbol}` };
     } catch (err) {
+      console.error(`Error fetching price for ${symbol}:`, err);
       return {
         data: null,
         error: err instanceof Error ? err.message : 'Failed to fetch price',
@@ -143,143 +137,191 @@ export class PriceService {
     }
   }
 
+  /**
+   * Get historical prices for a symbol
+   * @param symbol Ticker symbol
+   * @param period Output size ('compact' = last 100 days, 'full' = 20+ years)
+   */
   static async getHistoricalPrices(
     symbol: string,
-    outputSize: 'compact' | 'full' = 'compact'
+    period: AlphaVantageOutputSize = 'compact'
   ): Promise<{ data: HistoricalPrice[] | null; error: string | null }> {
     try {
-      const url = new URL(config.alphaVantage.baseUrl);
-      url.searchParams.append('function', 'TIME_SERIES_DAILY');
-      url.searchParams.append('symbol', symbol);
-      url.searchParams.append('outputsize', outputSize);
-      url.searchParams.append('apikey', config.alphaVantage.apiKey);
-
-      console.log(`[PriceService] Fetching historical prices for ${symbol} from Alpha Vantage...`);
-
-      const response = await fetch(url.toString());
-      const data = await response.json();
-
-      // Log the actual response for debugging
-      console.log(`[PriceService] API Response for ${symbol}:`, Object.keys(data));
-
-      if (data['Error Message']) {
-        console.error(`[PriceService] Alpha Vantage error for ${symbol}:`, data['Error Message']);
-        throw new Error(`Invalid symbol: ${symbol}`);
+      // First, try to get from database cache
+      const cachedPrices = await this.getCachedHistoricalPrices(symbol, period);
+      if (cachedPrices.data && cachedPrices.data.length > 0) {
+        console.log(`[PriceService] Using cached historical data for ${symbol} (${cachedPrices.data.length} points)`);
+        return cachedPrices;
       }
 
-      if (data['Note']) {
-        console.warn(`[PriceService] Rate limit warning for ${symbol}:`, data['Note']);
-        throw new Error(
-          'API call frequency limit reached. Please wait a minute and try again.'
-        );
+      console.log(`[PriceService] Fetching ${period} historical data for ${symbol} from Alpha Vantage`);
+      const alphaVantageResult = await AlphaVantageService.getHistoricalPrices(symbol, period);
+
+      if (alphaVantageResult.data) {
+        const historicalPrices: HistoricalPrice[] = alphaVantageResult.data.map(item => ({
+          date: item.date,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+          volume: item.volume,
+        }));
+
+        // Store historical prices in database
+        console.log(`[PriceService] Storing ${historicalPrices.length} historical prices for ${symbol}...`);
+        for (const price of historicalPrices) {
+          await this.storePriceInHistory(
+            symbol,
+            price.date,
+            price.open,
+            price.high,
+            price.low,
+            price.close,
+            price.volume,
+            'alpha_vantage'
+          );
+        }
+
+        console.log(`[PriceService] ✅ Successfully stored ${historicalPrices.length} prices for ${symbol}`);
+        return { data: historicalPrices, error: null };
       }
 
-      if (data['Information']) {
-        console.warn(`[PriceService] API Information message:`, data['Information']);
-        throw new Error(data['Information']);
+      // If Alpha Vantage fails, try to return cached data even if old
+      console.warn(`[PriceService] Alpha Vantage failed for ${symbol}: ${alphaVantageResult.error}`);
+      const oldCache = await this.getCachedHistoricalPrices(symbol, period, false);
+      if (oldCache.data && oldCache.data.length > 0) {
+        console.log(`[PriceService] Using old cached data for ${symbol} (${oldCache.data.length} points)`);
+        return { ...oldCache, error: 'Using cached data (Alpha Vantage unavailable)' };
       }
 
-      const timeSeries = data['Time Series (Daily)'];
-      if (!timeSeries) {
-        console.error(`[PriceService] No time series data for ${symbol}. Response keys:`, Object.keys(data));
-        throw new Error(`No historical data available for ${symbol}`);
+      return { data: null, error: alphaVantageResult.error || `No historical data available for ${symbol}` };
+    } catch (err) {
+      console.error(`[PriceService] Error fetching historical prices for ${symbol}:`, err);
+
+      // Try to return cached data on error
+      const oldCache = await this.getCachedHistoricalPrices(symbol, period, false);
+      if (oldCache.data && oldCache.data.length > 0) {
+        console.log(`[PriceService] Using old cached data after error for ${symbol}`);
+        return { ...oldCache, error: 'Using cached data (API error)' };
       }
 
-      const historicalPrices: HistoricalPrice[] = Object.entries(
-        timeSeries
-      ).map(([date, prices]: [string, any]) => ({
-        date,
-        open: parseFloat(prices['1. open']),
-        high: parseFloat(prices['2. high']),
-        low: parseFloat(prices['3. low']),
-        close: parseFloat(prices['4. close']),
-        volume: parseInt(prices['5. volume']),
+      return {
+        data: null,
+        error: err instanceof Error ? err.message : 'Failed to fetch historical prices',
+      };
+    }
+  }
+
+  /**
+   * Get cached historical prices from database
+   */
+  private static async getCachedHistoricalPrices(
+    symbol: string,
+    period: AlphaVantageOutputSize,
+    requireRecent: boolean = true
+  ): Promise<{ data: HistoricalPrice[] | null; error: string | null }> {
+    try {
+      // Calculate days back based on period
+      let daysBack = 100; // compact = last 100 days
+      if (period === 'full') {
+        daysBack = 7300; // full = 20 years
+      }
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysBack);
+      const startDateStr = startDate.toISOString().split('T')[0];
+
+      let query = supabase
+        .from('price_history')
+        .select('*')
+        .eq('symbol', symbol.toUpperCase())
+        .gte('date', startDateStr)
+        .order('date', { ascending: true });
+
+      // If requiring recent data, only return if we have data from last 7 days
+      if (requireRecent) {
+        const recentDate = new Date();
+        recentDate.setDate(recentDate.getDate() - 7);
+        const recentDateStr = recentDate.toISOString().split('T')[0];
+
+        const { data: recentCheck } = await supabase
+          .from('price_history')
+          .select('date')
+          .eq('symbol', symbol.toUpperCase())
+          .gte('date', recentDateStr)
+          .limit(1)
+          .maybeSingle();
+
+        if (!recentCheck) {
+          return { data: null, error: 'No recent cached data' };
+        }
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        return { data: null, error: 'No cached data found' };
+      }
+
+      const historicalPrices: HistoricalPrice[] = data.map(item => ({
+        date: item.date,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+        volume: item.volume,
       }));
-
-      console.log(`[PriceService] Successfully fetched ${historicalPrices.length} historical prices for ${symbol}`);
-
-      for (const price of historicalPrices) {
-        await this.storePriceInHistory(
-          symbol,
-          price.date,
-          price.open,
-          price.high,
-          price.low,
-          price.close,
-          price.volume ?? null,
-          'alpha_vantage'
-        );
-      }
-
-      console.log(`[PriceService] Stored ${historicalPrices.length} prices for ${symbol} in database`);
 
       return { data: historicalPrices, error: null };
     } catch (err) {
       return {
         data: null,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Failed to fetch historical prices',
+        error: err instanceof Error ? err.message : 'Failed to fetch cached prices',
       };
     }
   }
 
-  static async getMutualFundPrice(
+  /**
+   * Get latest price from database cache
+   */
+  private static async getLatestStoredPrice(
     symbol: string
   ): Promise<{ data: PriceData | null; error: string | null }> {
     try {
-      const url = new URL(config.alphaVantage.baseUrl);
-      url.searchParams.append('function', 'GLOBAL_QUOTE');
-      url.searchParams.append('symbol', symbol);
-      url.searchParams.append('apikey', config.alphaVantage.apiKey);
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('symbol', symbol.toUpperCase())
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      const response = await fetch(url.toString());
-      const data = await response.json();
-
-      if (
-        data['Error Message'] ||
-        !data['Global Quote'] ||
-        !data['Global Quote']['05. price']
-      ) {
-        const storedPrice = await this.getLatestStoredPrice(symbol);
-        if (storedPrice.data) {
-          return storedPrice;
-        }
-        throw new Error(`No price data available for mutual fund ${symbol}`);
+      if (error) throw error;
+      if (!data) {
+        return { data: null, error: `No cached price found for ${symbol}` };
       }
 
-      const quote = data['Global Quote'];
-      const priceData: PriceData = {
-        symbol: symbol.toUpperCase(),
-        price: parseFloat(quote['05. price']),
-        date: quote['07. latest trading day'],
-        source: 'alpha_vantage',
+      return {
+        data: {
+          symbol: data.symbol,
+          price: data.close,
+          date: data.date,
+          source: data.data_source || 'cache',
+        },
+        error: null,
       };
-
-      await this.storePriceInHistory(
-        symbol,
-        priceData.date,
-        parseFloat(quote['05. price']),
-        parseFloat(quote['05. price']),
-        parseFloat(quote['05. price']),
-        parseFloat(quote['05. price']),
-        null,
-        'alpha_vantage'
-      );
-
-      return { data: priceData, error: null };
     } catch (err) {
       return {
         data: null,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Failed to fetch mutual fund price',
+        error: err instanceof Error ? err.message : 'Failed to fetch stored price',
       };
     }
   }
 
+  /**
+   * Store price data in price_history table
+   */
   private static async storePriceInHistory(
     symbol: string,
     date: string,
@@ -287,8 +329,8 @@ export class PriceService {
     high: number,
     low: number,
     close: number,
-    volume: number | null,
-    source: string
+    volume?: number,
+    source: string = 'yahoo_finance'
   ): Promise<void> {
     try {
       await supabase.from('price_history').upsert(
@@ -299,52 +341,23 @@ export class PriceService {
           high_price: high,
           low_price: low,
           close_price: close,
-          volume,
+          volume: volume || 0,
           data_source: source,
         },
-        { onConflict: 'symbol,price_date' }
+        {
+          onConflict: 'symbol,price_date',
+          ignoreDuplicates: false,
+        }
       );
-    } catch (err) {
-      console.error('Failed to store price in history:', err);
+    } catch (error) {
+      console.error('Error storing price in history:', error);
     }
   }
 
-  static async getLatestStoredPrice(
-    symbol: string
-  ): Promise<{ data: PriceData | null; error: string | null }> {
-    try {
-      const { data, error } = await supabase
-        .from('price_history')
-        .select('*')
-        .eq('symbol', symbol.toUpperCase())
-        .order('price_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        return { data: null, error: 'No stored price found' };
-      }
-
-      return {
-        data: {
-          symbol: data.symbol,
-          price: Number(data.close_price),
-          date: data.price_date,
-          source: data.data_source,
-        },
-        error: null,
-      };
-    } catch (err) {
-      return {
-        data: null,
-        error:
-          err instanceof Error ? err.message : 'Failed to fetch stored price',
-      };
-    }
-  }
-
+  /**
+   * Update current prices for all holdings belonging to a user
+   * Optionally filter by specific symbols
+   */
   static async updateHoldingPrices(
     userId: string,
     symbols?: string[]
@@ -353,85 +366,90 @@ export class PriceService {
     updated: number;
     errors: string[];
   }> {
-    const errors: string[] = [];
-    let updated = 0;
-
     try {
-      let query = supabase.from('holdings').select('*').eq('user_id', userId);
+      console.log(`[PriceService] Updating holding prices for user ${userId}`);
+
+      // Get all holdings for the user (or filter by symbols)
+      let query = supabase
+        .from('holdings')
+        .select('id, symbol, asset_type, quantity')
+        .eq('user_id', userId);
 
       if (symbols && symbols.length > 0) {
-        query = query.in(
-          'symbol',
-          symbols.map(s => s.toUpperCase())
-        );
+        query = query.in('symbol', symbols.map(s => s.toUpperCase()));
       }
 
-      const { data: holdings, error } = await query;
+      const { data: holdings, error: holdingsError } = await query;
 
-      if (error) throw error;
+      if (holdingsError) throw holdingsError;
       if (!holdings || holdings.length === 0) {
+        console.log('[PriceService] No holdings found to update');
         return { success: true, updated: 0, errors: [] };
       }
 
-      const cryptoHoldings = holdings.filter(h =>
-        CryptoPriceService.isCryptocurrency(h.symbol)
-      );
-      const stockHoldings = holdings.filter(
-        h => !CryptoPriceService.isCryptocurrency(h.symbol)
-      );
+      console.log(`[PriceService] Found ${holdings.length} holdings to update`);
 
-      if (cryptoHoldings.length > 0) {
-        const cryptoResult = await CryptoPriceService.updateCryptoHoldings(
-          userId,
-          cryptoHoldings.map(h => h.symbol)
-        );
-        updated += cryptoResult.updated;
-        errors.push(...cryptoResult.errors);
-      }
+      let updated = 0;
+      const errors: string[] = [];
 
-      for (const holding of stockHoldings) {
-        await new Promise(resolve => setTimeout(resolve, 12000));
+      // Update each holding's current price and value
+      for (const holding of holdings) {
+        try {
+          const priceResult = await this.getCurrentPrice(holding.symbol);
 
-        const priceResult = await this.getCurrentPrice(holding.symbol);
+          if (priceResult.data) {
+            const newPrice = priceResult.data.price;
+            const newValue = Number(holding.quantity) * newPrice;
 
-        if (priceResult.error) {
-          errors.push(`${holding.symbol}: ${priceResult.error}`);
-          continue;
-        }
+            // Update the holding's current_price and current_value
+            const { error: updateError } = await supabase
+              .from('holdings')
+              .update({
+                current_price: newPrice,
+                current_value: newValue,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', holding.id);
 
-        if (priceResult.data) {
-          const newCurrentValue =
-            Number(holding.quantity) * priceResult.data.price;
-
-          const { error: updateError } = await supabase
-            .from('holdings')
-            .update({
-              current_price: priceResult.data.price,
-              current_value: newCurrentValue,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', holding.id);
-
-          if (updateError) {
-            errors.push(`${holding.symbol}: Failed to update holding`);
+            if (updateError) {
+              errors.push(`Failed to update ${holding.symbol}: ${updateError.message}`);
+            } else {
+              updated++;
+              console.log(`[PriceService] ✅ Updated ${holding.symbol} to $${newPrice.toFixed(2)} (value: $${newValue.toFixed(2)})`);
+            }
           } else {
-            updated++;
+            errors.push(`Failed to fetch price for ${holding.symbol}: ${priceResult.error}`);
           }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          errors.push(`Error updating ${holding.symbol}: ${errorMsg}`);
         }
       }
 
-      return { success: true, updated, errors };
+      console.log(`[PriceService] ✅ Price update complete: ${updated}/${holdings.length} holdings updated`);
+      if (errors.length > 0) {
+        console.warn(`[PriceService] ⚠️ Encountered ${errors.length} errors:`, errors);
+      }
+
+      return {
+        success: true,
+        updated,
+        errors,
+      };
     } catch (err) {
+      console.error('[PriceService] Error updating holding prices:', err);
       return {
         success: false,
-        updated,
-        errors: [
-          err instanceof Error ? err.message : 'Failed to update prices',
-        ],
+        updated: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to update holding prices'],
       };
     }
   }
 
+  /**
+   * Store a manual price for a symbol
+   * Useful for adding historical prices or fixing missing data
+   */
   static async storeManualPrice(
     symbol: string,
     date: string,
@@ -439,51 +457,22 @@ export class PriceService {
     userId: string
   ): Promise<{ success: boolean; error: string | null }> {
     try {
-      const { error } = await supabase.from('price_history').upsert(
-        {
-          symbol: symbol.toUpperCase(),
-          price_date: date,
-          open_price: price,
-          high_price: price,
-          low_price: price,
-          close_price: price,
-          volume: null,
-          data_source: 'manual',
-        },
-        { onConflict: 'symbol,price_date' }
+      await this.storePriceInHistory(
+        symbol,
+        date,
+        price,
+        price,
+        price,
+        price,
+        0,
+        'manual'
       );
-
-      if (error) throw error;
-
-      const { data: holdings, error: holdingsError } = await supabase
-        .from('holdings')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('symbol', symbol.toUpperCase());
-
-      if (holdingsError) throw holdingsError;
-
-      if (holdings && holdings.length > 0) {
-        for (const holding of holdings) {
-          const newCurrentValue = Number(holding.quantity) * price;
-
-          await supabase
-            .from('holdings')
-            .update({
-              current_price: price,
-              current_value: newCurrentValue,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', holding.id);
-        }
-      }
 
       return { success: true, error: null };
     } catch (err) {
       return {
         success: false,
-        error:
-          err instanceof Error ? err.message : 'Failed to store manual price',
+        error: err instanceof Error ? err.message : 'Failed to store manual price',
       };
     }
   }

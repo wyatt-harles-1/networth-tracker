@@ -169,7 +169,7 @@ export function usePortfolioCalculations() {
           .from('account_balance_history')
           .select('account_id, realized_gain')
           .eq('user_id', user.id)
-          .order('balance_date', { ascending: false });
+          .order('snapshot_date', { ascending: false });
 
         if (error) throw error;
 
