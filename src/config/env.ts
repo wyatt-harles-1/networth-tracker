@@ -47,7 +47,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   VITE_SUPABASE_URL: z.string().url('Invalid Supabase URL'),
   VITE_SUPABASE_ANON_KEY: z.string().min(1, 'Supabase anon key is required'),
-  VITE_FINNHUB_API_KEY: z.string().min(1, 'Finnhub API key is required'),
+  VITE_FINNHUB_API_KEY: z.string().optional(),
   VITE_ALPHA_VANTAGE_API_KEY: z.string().optional(),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
@@ -86,7 +86,7 @@ export const config = {
   },
 
   finnhub: {
-    apiKey: env.VITE_FINNHUB_API_KEY,
+    apiKey: env.VITE_FINNHUB_API_KEY || undefined,
   },
 
   alphaVantage: {
