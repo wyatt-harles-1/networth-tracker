@@ -7,6 +7,15 @@
   ],
   "headers": [
     {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://finnhub.io https://www.alphavantage.co https://query1.finance.yahoo.com; worker-src 'self' blob:;"
+        }
+      ]
+    },
+    {
       "source": "/sw.js",
       "headers": [
         {

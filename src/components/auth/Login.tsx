@@ -96,6 +96,7 @@ export function Login({ onSwitchToSignup, onSwitchToReset }: LoginProps) {
               required
               disabled={loading}
               className="mt-1"
+              autoComplete="email"
               style={{
                 WebkitBoxShadow: '0 0 0 1000px white inset',
                 WebkitTextFillColor: 'inherit',
@@ -115,6 +116,7 @@ export function Login({ onSwitchToSignup, onSwitchToReset }: LoginProps) {
                 required
                 disabled={loading}
                 className="pr-10"
+                autoComplete="current-password"
                 style={{
                   WebkitBoxShadow: '0 0 0 1000px white inset',
                   WebkitTextFillColor: 'inherit',

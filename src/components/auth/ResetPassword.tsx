@@ -134,6 +134,7 @@ export function ResetPassword({ onSwitchToLogin }: ResetPasswordProps) {
               required
               disabled={loading}
               className="mt-1"
+              autoComplete="email"
               style={{
                 WebkitBoxShadow: '0 0 0 1000px white inset',
                 WebkitTextFillColor: 'inherit',

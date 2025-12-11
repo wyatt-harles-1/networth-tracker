@@ -151,6 +151,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
               required
               disabled={loading}
               className="mt-1"
+              autoComplete="name"
               style={{
                 WebkitBoxShadow: '0 0 0 1000px white inset',
                 WebkitTextFillColor: 'inherit',
@@ -169,6 +170,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
               required
               disabled={loading}
               className="mt-1"
+              autoComplete="email"
               style={{
                 WebkitBoxShadow: '0 0 0 1000px white inset',
                 WebkitTextFillColor: 'inherit',
@@ -188,6 +190,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
                 required
                 disabled={loading}
                 className="pr-10"
+                autoComplete="new-password"
                 style={{
                   WebkitBoxShadow: '0 0 0 1000px white inset',
                   WebkitTextFillColor: 'inherit',
@@ -221,6 +224,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
                 required
                 disabled={loading}
                 className="pr-10"
+                autoComplete="new-password"
                 style={{
                   WebkitBoxShadow: '0 0 0 1000px white inset',
                   WebkitTextFillColor: 'inherit',
