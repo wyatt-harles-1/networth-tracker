@@ -295,6 +295,63 @@ export function usePortfolioCalculations() {
           : 0;
     });
 
+    // ----- TAX VEHICLE BREAKDOWN -----
+
+    // Tax vehicle color mapping
+    const TAX_VEHICLE_COLORS: Record<string, string> = {
+      'Taxable': '#F59E0B',           // Orange/Amber
+      'Tax-Deferred': '#10B981',      // Green
+      'Tax-Free': '#3B82F6',          // Blue
+      'Not Specified': '#6B7280',     // Gray
+    };
+
+    // Group holdings by tax vehicle type for allocation pie chart
+    const taxVehicleBreakdown: Record<
+      string,
+      { value: number; percentage: number; color: string }
+    > = {};
+
+    holdings.forEach(holding => {
+      // Find account for this holding
+      const account = accounts.find(acc => acc.id === holding.account_id);
+      if (!account || account.account_type !== 'asset') return;
+
+      // Determine tax vehicle name and color
+      let vehicleName = 'Not Specified';
+      let color = TAX_VEHICLE_COLORS['Not Specified'];
+
+      if (account.tax_type === 'taxable') {
+        vehicleName = 'Taxable';
+        color = TAX_VEHICLE_COLORS['Taxable'];
+      } else if (account.tax_type === 'tax_deferred') {
+        vehicleName = 'Tax-Deferred';
+        color = TAX_VEHICLE_COLORS['Tax-Deferred'];
+      } else if (account.tax_type === 'tax_free') {
+        vehicleName = 'Tax-Free';
+        color = TAX_VEHICLE_COLORS['Tax-Free'];
+      }
+
+      // Initialize vehicle if not exists
+      if (!taxVehicleBreakdown[vehicleName]) {
+        taxVehicleBreakdown[vehicleName] = {
+          value: 0,
+          percentage: 0,
+          color: color,
+        };
+      }
+
+      // Add holding value to vehicle total
+      taxVehicleBreakdown[vehicleName].value += Number(holding.current_value);
+    });
+
+    // Calculate percentages for each tax vehicle
+    Object.keys(taxVehicleBreakdown).forEach(key => {
+      taxVehicleBreakdown[key].percentage =
+        totalAssets > 0
+          ? (taxVehicleBreakdown[key].value / totalAssets) * 100
+          : 0;
+    });
+
     // ----- GAINS & PERFORMANCE -----
 
     // Cost Basis: Total amount invested (excludes cash)
@@ -369,6 +426,7 @@ export function usePortfolioCalculations() {
       allTimeDividendIncome,
       trailing12MonthDividendIncome,
       assetClassBreakdown,
+      taxVehicleBreakdown,
       accountTypeBreakdown: {
         assets: totalAssets,
         liabilities: totalLiabilities,

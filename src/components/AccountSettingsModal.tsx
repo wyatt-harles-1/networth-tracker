@@ -60,6 +60,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useAssetClasses } from '@/hooks/useAssetClasses';
 
 const iconMap = {
   Wallet,
@@ -98,6 +99,7 @@ interface Account {
   current_balance: number;
   icon: string;
   is_visible: boolean;
+  asset_class_id?: string | null;
   tax_type?: 'taxable' | 'tax_deferred' | 'tax_free' | null;
   institution?: string | null;
   account_number_last4?: string | null;
@@ -127,6 +129,9 @@ export function AccountSettingsModal({
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Load asset classes
+  const { assetClasses } = useAssetClasses();
+
   // Initialize form data when account changes
   useEffect(() => {
     if (account) {
@@ -137,6 +142,7 @@ export function AccountSettingsModal({
         category: account.category,
         icon: account.icon,
         is_visible: account.is_visible,
+        asset_class_id: account.asset_class_id || null,
         tax_type: account.tax_type || null,
         notes: account.notes || '',
         interest_rate: account.interest_rate || null,
@@ -174,11 +180,27 @@ export function AccountSettingsModal({
 
     setSaving(true);
     try {
-      await onSave(account.id, formData);
+      // Filter out only valid account fields
+      const validUpdates: Partial<Account> = {
+        name: formData.name,
+        category: formData.category,
+        icon: formData.icon,
+        is_visible: formData.is_visible,
+        asset_class_id: formData.asset_class_id,
+        tax_type: formData.tax_type,
+        institution: formData.institution || null,
+        account_number_last4: formData.account_number_last4 || null,
+        notes: formData.notes || null,
+      };
+
+      console.log('Saving account updates:', validUpdates);
+      await onSave(account.id, validUpdates);
+      console.log('Save successful');
       setHasChanges(false);
       onClose();
     } catch (error) {
       console.error('Error saving account:', error);
+      alert('Failed to save changes: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setSaving(false);
     }
@@ -293,6 +315,49 @@ export function AccountSettingsModal({
                   </SelectContent>
                 </Select>
               </div>
+
+              {isAsset && (
+                <div>
+                  <Label htmlFor="asset_class">Asset Class</Label>
+                  <Select
+                    value={formData.asset_class_id || 'none'}
+                    onValueChange={value =>
+                      updateField(
+                        'asset_class_id',
+                        value === 'none' ? null : value
+                      )
+                    }
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select asset class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">None</span>
+                          <span className="text-xs text-gray-500">
+                            Uncategorized
+                          </span>
+                        </div>
+                      </SelectItem>
+                      {assetClasses.map(assetClass => (
+                        <SelectItem key={assetClass.id} value={assetClass.id}>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: assetClass.color }}
+                            />
+                            <span className="font-medium">{assetClass.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Used for asset class allocation analysis
+                  </p>
+                </div>
+              )}
 
               <div>
                 <Label className="mb-2 block">Account Icon</Label>

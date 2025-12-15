@@ -107,6 +107,7 @@ export function InsightsNew() {
 
   const {
     allocation,
+    taxVehicleAllocation,
     totalValue,
     benchmarkData,
     unrealizedGains,
@@ -338,6 +339,7 @@ export function InsightsNew() {
           {selectedTab === 'allocations' && (
             <AllocationsView
               allocation={allocation}
+              taxVehicleAllocation={taxVehicleAllocation}
               totalValue={totalValue}
               percentageChange={percentageChange}
             />

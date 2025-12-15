@@ -668,16 +668,17 @@ export class AccountMetricsService {
 
       console.log(`[AccountMetrics] Found ${accounts.length} accounts to aggregate`);
 
-      // Fetch history for each account and aggregate by date
+      // ⚡ PERFORMANCE: Fetch history for all accounts in parallel
       const historyByDate = new Map<string, AccountBalanceHistoryPoint>();
 
-      for (const account of accounts) {
-        const historyResult = await this.getAccountBalanceHistory(
-          userId,
-          account.id,
-          daysBack
-        );
+      const historyPromises = accounts.map(account =>
+        this.getAccountBalanceHistory(userId, account.id, daysBack)
+      );
 
+      const historyResults = await Promise.all(historyPromises);
+
+      // Aggregate all results
+      historyResults.forEach(historyResult => {
         if (historyResult.data) {
           historyResult.data.forEach(point => {
             const existing = historyByDate.get(point.snapshot_date);
@@ -706,7 +707,7 @@ export class AccountMetricsService {
             }
           });
         }
-      }
+      });
 
       // Convert map to array and sort by date
       const portfolioHistory = Array.from(historyByDate.values()).sort(
@@ -766,7 +767,7 @@ export class AccountMetricsService {
 
       console.log(`[AccountMetrics] Aggregating metrics from ${accounts.length} accounts`);
 
-      // Aggregate metrics from all accounts
+      // ⚡ PERFORMANCE: Fetch metrics for all accounts in parallel
       const portfolioMetrics: AccountMetrics = {
         accountBalance: 0,
         marketValue: 0,
@@ -780,9 +781,14 @@ export class AccountMetricsService {
         transactionCount: 0,
       };
 
-      for (const account of accounts) {
-        const metricsResult = await this.getAccountMetrics(userId, account.id);
+      const metricsPromises = accounts.map(account =>
+        this.getAccountMetrics(userId, account.id)
+      );
 
+      const metricsResults = await Promise.all(metricsPromises);
+
+      // Aggregate all results
+      metricsResults.forEach(metricsResult => {
         if (metricsResult.data) {
           const metrics = metricsResult.data;
           portfolioMetrics.accountBalance += metrics.accountBalance;
@@ -794,7 +800,7 @@ export class AccountMetricsService {
           portfolioMetrics.holdingsCount += metrics.holdingsCount;
           portfolioMetrics.transactionCount += metrics.transactionCount;
         }
-      }
+      });
 
       // Calculate portfolio-wide percentage change
       portfolioMetrics.percentChange =

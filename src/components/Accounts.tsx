@@ -51,6 +51,7 @@ import {
   Coins,
   TrendingUp,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,7 @@ interface Account {
   current_balance: number;
   icon: string;
   is_visible: boolean;
+  asset_class_id?: string | null;
   institution: string | null;
   account_number_last4: string | null;
   created_at: string;
@@ -119,6 +121,7 @@ interface AccountData {
 export function Accounts() {
   const {
     accounts,
+    loading,
     addAccount,
     updateAccount,
     deleteAccount,
@@ -156,7 +159,13 @@ export function Accounts() {
     accountId: string,
     updates: Partial<Account>
   ) => {
-    await updateAccount(accountId, updates);
+    console.log('handleSaveSettings called with:', { accountId, updates });
+    const result = await updateAccount(accountId, updates);
+    if (result.error) {
+      console.error('Failed to save account settings:', result.error);
+      throw new Error(result.error);
+    }
+    console.log('Account settings saved successfully');
   };
 
   const handleAccountClick = (account: Account) => {
@@ -228,8 +237,17 @@ export function Accounts() {
     return getTotalAssets() - getTotalLiabilities();
   };
 
+  // Show loading spinner until all data is ready
+  if (loading) {
+    return (
+      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4 pb-20">
+    <div className="p-4 pb-20 animate-in fade-in duration-300">
       <div className="space-y-4">
         {/* Header with Summary */}
         <div className="mb-6">

@@ -29,9 +29,9 @@ export function BottomNavigation() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none">
-      <div className="flex justify-center pb-6 px-6 safe-area-pb">
-        <div className="bg-white/80 backdrop-blur-xl border border-gray-200/50 rounded-full shadow-lg pointer-events-auto max-w-md">
+    <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none">
+      <div className="flex justify-center px-6 safe-area-pb">
+        <div className="bg-slate-100/95 backdrop-blur-xl border border-slate-300/60 rounded-full shadow-[0_8px_32px_rgba(71,85,105,0.15)] pointer-events-auto max-w-md">
           <div className="flex items-center justify-around px-1 py-2 gap-0.5">
             {navigationItems.map(item => {
               const Icon = item.icon;

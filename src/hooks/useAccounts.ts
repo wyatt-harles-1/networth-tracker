@@ -75,6 +75,9 @@ interface Account {
   /** Whether to include in net worth calculations */
   is_visible: boolean;
 
+  /** Asset class for allocation analysis */
+  asset_class_id: string | null;
+
   /** Institution name (e.g., "Chase", "Vanguard") */
   institution: string | null;
 
@@ -239,11 +242,15 @@ export function useAccounts() {
    */
   const updateAccount = async (id: string, updates: AccountUpdate) => {
     try {
-      const { error } = await supabase
+      console.log('updateAccount called with:', { id, updates });
+      const { data, error } = await supabase
         .from('accounts')
         .update(updates)
         .eq('id', id)
-        .eq('user_id', user!.id); // Security: only update own accounts
+        .eq('user_id', user!.id) // Security: only update own accounts
+        .select();
+
+      console.log('Supabase update result:', { data, error });
 
       if (error) throw error;
 
@@ -251,6 +258,7 @@ export function useAccounts() {
       await fetchAccounts();
       return { error: null };
     } catch (err) {
+      console.error('updateAccount error:', err);
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to update account';
       return { error: errorMessage };

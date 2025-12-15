@@ -1,8 +1,9 @@
 import { useTransactions } from '@/hooks/useTransactions';
 import { Card } from '@/components/ui/card';
 import { TransactionCard } from './TransactionCard';
-import { Loader2, AlertCircle, DollarSign } from 'lucide-react';
+import { AlertCircle, DollarSign } from 'lucide-react';
 import { Transaction } from '@/types/transaction';
+import { SkeletonTransactionsList } from './ui/skeletons';
 
 interface TransactionListNewProps {
   accountId?: string;
@@ -48,11 +49,7 @@ export function TransactionListNew({
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-      </div>
-    );
+    return <SkeletonTransactionsList count={5} />;
   }
 
   if (error) {

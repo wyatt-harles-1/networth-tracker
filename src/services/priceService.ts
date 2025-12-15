@@ -235,8 +235,8 @@ export class PriceService {
         .from('price_history')
         .select('*')
         .eq('symbol', symbol.toUpperCase())
-        .gte('date', startDateStr)
-        .order('date', { ascending: true });
+        .gte('price_date', startDateStr)
+        .order('price_date', { ascending: true });
 
       // If requiring recent data, only return if we have data from last 7 days
       if (requireRecent) {
@@ -246,9 +246,9 @@ export class PriceService {
 
         const { data: recentCheck } = await supabase
           .from('price_history')
-          .select('date')
+          .select('price_date')
           .eq('symbol', symbol.toUpperCase())
-          .gte('date', recentDateStr)
+          .gte('price_date', recentDateStr)
           .limit(1)
           .maybeSingle();
 
@@ -265,11 +265,11 @@ export class PriceService {
       }
 
       const historicalPrices: HistoricalPrice[] = data.map(item => ({
-        date: item.date,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
+        date: item.price_date,
+        open: item.open_price,
+        high: item.high_price,
+        low: item.low_price,
+        close: item.close_price,
         volume: item.volume,
       }));
 
@@ -293,7 +293,7 @@ export class PriceService {
         .from('price_history')
         .select('*')
         .eq('symbol', symbol.toUpperCase())
-        .order('date', { ascending: false })
+        .order('price_date', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -305,8 +305,8 @@ export class PriceService {
       return {
         data: {
           symbol: data.symbol,
-          price: data.close,
-          date: data.date,
+          price: data.close_price,
+          date: data.price_date,
           source: data.data_source || 'cache',
         },
         error: null,

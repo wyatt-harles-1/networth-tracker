@@ -144,7 +144,7 @@ async function createNewSnapshot(
   // Get cash balances from accounts
   const { data: accounts, error: accountsError } = await supabase
     .from('accounts')
-    .select('balance, account_type')
+    .select('current_balance, account_type')
     .eq('user_id', userId);
 
   if (accountsError) throw accountsError;
@@ -157,7 +157,7 @@ async function createNewSnapshot(
       account.account_type === 'savings' ||
       account.account_type === 'cash'
     ) {
-      totalCash += account.balance;
+      totalCash += account.current_balance;
     }
   }
 
@@ -225,7 +225,7 @@ async function updateSnapshot(
 
   const { data: accounts, error: accountsError } = await supabase
     .from('accounts')
-    .select('balance, account_type')
+    .select('current_balance, account_type')
     .eq('user_id', userId);
 
   if (accountsError) throw accountsError;
@@ -237,7 +237,7 @@ async function updateSnapshot(
       account.account_type === 'savings' ||
       account.account_type === 'cash'
     ) {
-      totalCash += account.balance;
+      totalCash += account.current_balance;
     }
   }
 

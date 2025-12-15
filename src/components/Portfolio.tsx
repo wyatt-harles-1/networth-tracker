@@ -28,9 +28,8 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
-  Loader2,
   TrendingUp,
   TrendingDown,
   ArrowUpDown,
@@ -52,15 +51,14 @@ import { formatCurrency } from '@/lib/utils';
 import { useHoldings } from '@/hooks/useHoldings';
 import { usePortfolioCalculations } from '@/hooks/usePortfolioCalculations';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePortfolioData } from '@/hooks/usePortfolioQueries';
 import { PerformanceChartContainer } from './PerformanceChartContainer';
 import { HoldingCard } from './HoldingCard';
 import { HoldingDetailModal } from './HoldingDetailModal';
 import { AssetTypeFilter } from './AssetTypeFilter';
-import {
-  AccountMetricsService,
-  AccountBalanceHistoryPoint,
-  AccountMetrics,
-} from '@/services/accountMetricsService';
+import { PriceDataSettings } from './PriceDataSettings';
+import { Loader2 } from 'lucide-react';
+import { AccountBalanceHistoryPoint } from '@/services/accountMetricsService';
 
 /**
  * Portfolio page component
@@ -69,10 +67,6 @@ export function PortfolioReal() {
   const [timeRange, setTimeRange] = useState<
     'YTD' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
   >('3M');
-  const [historyData, setHistoryData] = useState<AccountBalanceHistoryPoint[]>(
-    []
-  );
-  const [loadingChart, setLoadingChart] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<
     'alphabetical' | 'value-high' | 'value-low' | 'value-gain-high' | 'value-gain-low' | 'percent-gain-high' | 'percent-gain-low'
@@ -90,9 +84,6 @@ export function PortfolioReal() {
   const [syncTotal, setSyncTotal] = useState(0);
   const [syncTimeRemaining, setSyncTimeRemaining] = useState(0);
   const [syncAbortController, setSyncAbortController] = useState<AbortController | null>(null);
-  const [portfolioMetricsData, setPortfolioMetricsData] =
-    useState<AccountMetrics | null>(null);
-  const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [selectedHolding, setSelectedHolding] = useState<any | null>(null);
 
   const { user } = useAuth();
@@ -103,96 +94,42 @@ export function PortfolioReal() {
   } = useHoldings();
   const { loading: portfolioLoading } = usePortfolioCalculations();
 
-  const loadPortfolioData = useCallback(async () => {
-    if (!user) return;
+  // ⚡ Calculate days back based on time range
+  const daysBackMap = useMemo(() => {
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const ytdDays = Math.ceil(
+      (now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)
+    );
 
-    setLoadingChart(true);
-    setLoadingMetrics(true);
+    return {
+      '1W': 6,
+      '1M': 29,
+      '3M': 89,
+      YTD: ytdDays - 1,
+      '1Y': 364,
+      '5Y': 1824,
+      ALL: 3649,
+    };
+  }, []);
 
-    try {
-      // Get portfolio-wide history data
-      // Calculate YTD days (from Jan 1 of current year to today)
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const ytdDays = Math.ceil(
-        (now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)
-      );
+  // ⚡ PERFORMANCE: Use React Query for cached, parallel data fetching
+  const {
+    historyData,
+    metricsData: portfolioMetricsData,
+    isLoading: isLoadingPortfolioData,
+    refetchAll: refetchPortfolioData,
+  } = usePortfolioData(timeRange, daysBackMap[timeRange]);
 
-      const daysMap = {
-        '1W': 6, // 7 days inclusive (today + 6 days back)
-        '1M': 29, // 30 days inclusive
-        '3M': 89, // 90 days inclusive
-        YTD: ytdDays - 1, // Inclusive from Jan 1 to today
-        '1Y': 364, // 365 days inclusive
-        '5Y': 1824, // 1825 days inclusive
-        ALL: 3649, // 3650 days inclusive
-      };
-
-      const historyResult =
-        await AccountMetricsService.getPortfolioBalanceHistory(
-          user.id,
-          daysMap[timeRange]
-        );
-
-      if (historyResult.data) {
-        setHistoryData(historyResult.data);
-      }
-
-      // Get portfolio metrics
-      const metricsResult = await AccountMetricsService.getPortfolioMetrics(
-        user.id
-      );
-      if (metricsResult.data) {
-        setPortfolioMetricsData(metricsResult.data);
-        console.log('[Portfolio] Metrics loaded:', metricsResult.data);
-      }
-    } catch (err) {
-      console.error('[Portfolio] Error loading portfolio data:', err);
-    } finally {
-      setLoadingChart(false);
-      setLoadingMetrics(false);
-    }
-  }, [user, timeRange]);
-
-  useEffect(() => {
-    if (user) {
-      loadPortfolioData();
-    }
-  }, [user, timeRange, loadPortfolioData]);
-
+  // ⚡ PERFORMANCE: Refresh handler using React Query cache invalidation
   const handleRefreshChart = async () => {
     if (!user) return;
 
     setRefreshing(true);
+    setSyncMessage(null);
 
     try {
-      // Refresh history data
-      // Calculate YTD days (from Jan 1 of current year to today)
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const ytdDays = Math.ceil(
-        (now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      const daysMap = {
-        '1W': 6, // 7 days inclusive (today + 6 days back)
-        '1M': 29, // 30 days inclusive
-        '3M': 89, // 90 days inclusive
-        YTD: ytdDays - 1, // Inclusive from Jan 1 to today
-        '1Y': 364, // 365 days inclusive
-        '5Y': 1824, // 1825 days inclusive
-        ALL: 3649, // 3650 days inclusive
-      };
-
-      const historyResult =
-        await AccountMetricsService.getPortfolioBalanceHistory(
-          user.id,
-          daysMap[timeRange]
-        );
-
-      if (historyResult.data) {
-        setHistoryData(historyResult.data);
-      }
+      await refetchPortfolioData();
     } catch (err) {
       console.error('[Portfolio] Error refreshing portfolio data:', err);
     } finally {
@@ -283,8 +220,8 @@ export function PortfolioReal() {
         );
         setTimeout(() => setSyncMessage(null), 7000);
 
-        // Refresh the chart data and holdings
-        await loadPortfolioData();
+        // ⚡ Refresh the chart data and holdings using React Query
+        await refetchPortfolioData();
         await refetchHoldings();
       } else {
         setSyncMessage('All price data is up to date!');
@@ -483,7 +420,8 @@ export function PortfolioReal() {
     }
   }, [holdingsWithGains, sortBy]);
 
-  if (holdingsLoading || portfolioLoading) {
+  // ⚡ Show loading spinner until all data is ready (parallel loading via React Query)
+  if (holdingsLoading || portfolioLoading || isLoadingPortfolioData) {
     return (
       <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
@@ -492,7 +430,7 @@ export function PortfolioReal() {
   }
 
   return (
-    <div className="p-4 pb-20">
+    <div className="p-4 pb-20 animate-in fade-in duration-300">
       <div className="space-y-4">
         {syncMessage && (
           <Card
@@ -531,30 +469,33 @@ export function PortfolioReal() {
             '5Y',
             'ALL',
           ]}
-          loading={loadingChart}
+          loading={isLoadingPortfolioData}
           refreshing={refreshing}
           onTimeRangeChange={handleTimeRangeChange}
           onRefresh={handleRefreshChart}
           currentValue={portfolioMetrics.currentValue}
           extraButton={
-            <Button
-              onClick={handleSyncPrices}
-              disabled={syncingPrices}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
-              title="Manually fetch missing historical price data across all accounts"
-            >
-              <Database
-                className={`h-3.5 w-3.5 ${syncingPrices ? 'animate-pulse' : ''}`}
-              />
-              <span className="hidden sm:inline">
-                {syncingPrices ? 'Syncing...' : 'Sync Prices'}
-              </span>
-              <span className="sm:hidden">
-                {syncingPrices ? '...' : 'Sync'}
-              </span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleSyncPrices}
+                disabled={syncingPrices}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
+                title="Manually fetch missing historical price data across all accounts"
+              >
+                <Database
+                  className={`h-3.5 w-3.5 ${syncingPrices ? 'animate-pulse' : ''}`}
+                />
+                <span className="hidden sm:inline">
+                  {syncingPrices ? 'Syncing...' : 'Sync Prices'}
+                </span>
+                <span className="sm:hidden">
+                  {syncingPrices ? '...' : 'Sync'}
+                </span>
+              </Button>
+              <PriceDataSettings />
+            </div>
           }
           extraContent={
             syncProgress ? (
@@ -608,7 +549,7 @@ export function PortfolioReal() {
             ) : undefined
           }
           headerContent={
-            loadingMetrics ? (
+            isLoadingPortfolioData ? (
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
               </div>

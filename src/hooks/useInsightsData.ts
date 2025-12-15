@@ -60,6 +60,17 @@ export function useInsightsData() {
     );
   }, [portfolio.assetClassBreakdown]);
 
+  const taxVehicleAllocation: AssetAllocation[] = useMemo(() => {
+    return Object.entries(portfolio.taxVehicleBreakdown || {}).map(
+      ([name, data]) => ({
+        name,
+        value: data.value,
+        color: data.color,
+        percentage: data.percentage,
+      })
+    );
+  }, [portfolio.taxVehicleBreakdown]);
+
   const totalValue = useMemo(() => {
     return portfolio.netWorth;
   }, [portfolio.netWorth]);
@@ -217,6 +228,7 @@ export function useInsightsData() {
 
   return {
     allocation,
+    taxVehicleAllocation,
     totalValue,
     performanceData,
     benchmarkData,

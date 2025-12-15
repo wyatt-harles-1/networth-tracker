@@ -65,7 +65,7 @@ export class ReconciliationSuggestionsService {
           // Get account name
           const { data: account } = await supabase
             .from('accounts')
-            .select('account_name')
+            .select('name')
             .eq('id', result.accountId)
             .single();
 
@@ -79,7 +79,7 @@ export class ReconciliationSuggestionsService {
             title: 'Balance Mismatch Detected',
             description: `The calculated balance (${result.expectedBalance.toFixed(2)}) differs from the stored balance (${result.actualBalance.toFixed(2)}) by ${result.difference.toFixed(2)}`,
             accountId: result.accountId,
-            accountName: account?.account_name,
+            accountName: account?.name,
             suggestedAction: 'Recalculate account balance from transaction history',
             autoFixAvailable: true,
             autoFixFunction: async () => {
@@ -129,7 +129,7 @@ export class ReconciliationSuggestionsService {
         if (txs.length > 1) {
           const { data: account } = await supabase
             .from('accounts')
-            .select('account_name')
+            .select('name')
             .eq('id', txs[0].account_id)
             .single();
 
@@ -140,7 +140,7 @@ export class ReconciliationSuggestionsService {
             title: 'Potential Duplicate Transactions',
             description: `Found ${txs.length} identical transactions on ${txs[0].transaction_date}`,
             accountId: txs[0].account_id,
-            accountName: account?.account_name,
+            accountName: account?.name,
             suggestedAction: 'Review and remove duplicate transactions',
             autoFixAvailable: false,
             details: { transactions: txs },
@@ -165,7 +165,7 @@ export class ReconciliationSuggestionsService {
     try {
       const { data: accounts } = await supabase
         .from('accounts')
-        .select('id, account_name')
+        .select('id, name')
         .eq('user_id', userId)
         .eq('account_type', 'investment');
 
@@ -184,7 +184,7 @@ export class ReconciliationSuggestionsService {
               title: 'Holdings Mismatch',
               description: warning.message,
               accountId: account.id,
-              accountName: account.account_name,
+              accountName: account.name,
               suggestedAction: 'Recalculate holdings from transaction history',
               autoFixAvailable: true,
               autoFixFunction: async () => {
@@ -212,7 +212,7 @@ export class ReconciliationSuggestionsService {
     try {
       const { data: holdings, error } = await supabase
         .from('holdings')
-        .select('*, accounts(account_name)')
+        .select('*, accounts(name)')
         .eq('user_id', userId)
         .is('current_price', null);
 
@@ -226,7 +226,7 @@ export class ReconciliationSuggestionsService {
           title: 'Missing Price Data',
           description: `No current price available for ${holding.ticker}`,
           accountId: holding.account_id,
-          accountName: holding.accounts?.account_name,
+          accountName: holding.accounts?.name,
           suggestedAction: 'Update price manually or refresh from market data',
           autoFixAvailable: false,
           details: { ticker: holding.ticker },
@@ -253,7 +253,7 @@ export class ReconciliationSuggestionsService {
 
     await supabase
       .from('accounts')
-      .update({ balance: result.expectedBalance })
+      .update({ current_balance: result.expectedBalance })
       .eq('id', accountId)
       .eq('user_id', userId);
   }

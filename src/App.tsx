@@ -23,11 +23,25 @@
 import { RouterProvider } from 'react-router-dom';
 import { router } from './routes';
 import { AuthProvider } from './contexts/AuthContext';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Create a query client instance with optimized defaults
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // Data considered fresh for 5 minutes
+      gcTime: 1000 * 60 * 30, // Cache kept for 30 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false, // Don't refetch on window focus
+      retry: 1, // Retry failed requests once
+    },
+  },
+});
 
 /**
  * Main App component
  *
  * Bootstraps the application with:
+ * - React Query for data caching and state management
  * - Authentication context
  * - Client-side routing
  *
@@ -35,9 +49,11 @@ import { AuthProvider } from './contexts/AuthContext';
  */
 function App() {
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 

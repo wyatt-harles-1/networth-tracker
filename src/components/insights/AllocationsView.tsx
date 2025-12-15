@@ -32,10 +32,22 @@
  * ============================================================================
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAllocationTargets } from '@/hooks/useAllocationTargets';
+import { useAllocationRecommendations } from '@/hooks/useAllocationRecommendations';
+import { allocationAnalysisService } from '@/services/allocationAnalysisService';
+import { recommendationGeneratorService } from '@/services/recommendationGeneratorService';
+import { AllocationStatsCards } from '../allocation/AllocationStatsCards';
+import { TargetAllocationEditor } from '../allocation/TargetAllocationEditor';
+import { ActualVsTargetChart } from '../allocation/ActualVsTargetChart';
+import { RecommendationsPanel } from '../allocation/RecommendationsPanel';
+import { RiskHeatmap } from '../allocation/RiskHeatmap';
+import type { AssetClassAllocation, AccountAllocation } from '@/services/allocationAnalysisService';
 
 /**
  * Single allocation item structure
@@ -49,6 +61,7 @@ interface AllocationItem {
 
 interface AllocationsViewProps {
   allocation: AllocationItem[];
+  taxVehicleAllocation: AllocationItem[];
   totalValue: number;
   percentageChange: number;
 }
@@ -86,15 +99,92 @@ const TAX_VEHICLE_COLORS = ['#10B981', '#F59E0B', '#3B82F6'];
  */
 export function AllocationsView({
   allocation,
+  taxVehicleAllocation,
   totalValue,
   percentageChange,
 }: AllocationsViewProps) {
+  const { user } = useAuth();
   const [selectedSegment, setSelectedSegment] = useState<AllocationItem | null>(
     null
   );
   const [selectedChart, setSelectedChart] = useState<
     'asset' | 'sector' | 'tax'
   >('asset');
+  const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
+
+  // Hooks for allocation targets and recommendations
+  const {
+    target,
+    loading: targetsLoading,
+    saveTarget,
+    refetch: refetchTargets,
+  } = useAllocationTargets(user?.id);
+
+  const {
+    recommendations,
+    loading: recommendationsLoading,
+    createRecommendation,
+    dismissRecommendation,
+    clearAllRecommendations,
+  } = useAllocationRecommendations(user?.id);
+
+  // Convert AllocationItem[] to AssetClassAllocation[]
+  const assetClassAllocations: AssetClassAllocation[] = allocation.map(item => ({
+    assetClass: item.name,
+    value: item.value,
+    percentage: item.percentage,
+  }));
+
+  // Calculate analysis metrics
+  const diversification = allocationAnalysisService.calculateDiversificationScore(assetClassAllocations);
+  const riskAnalysis = allocationAnalysisService.calculateRiskLevel(assetClassAllocations);
+
+  // Calculate drift if target exists
+  const driftAnalysis = target
+    ? allocationAnalysisService.calculateDrift(
+        assetClassAllocations,
+        target.targets,
+        totalValue,
+        target.rebalance_threshold
+      )
+    : null;
+
+  // Mock tax efficiency (you'll need to pass account data for real analysis)
+  const taxEfficiency = null; // For now, set to null until we have account type data
+
+  // Generate recommendations when data changes
+  useEffect(() => {
+    if (!user?.id || !recommendationsEnabled) return;
+
+    const generateRecommendations = async () => {
+      // Clear old recommendations
+      await clearAllRecommendations();
+
+      // Generate new recommendations
+      const newRecommendations = recommendationGeneratorService.generateAllRecommendations(
+        driftAnalysis,
+        taxEfficiency,
+        diversification,
+        riskAnalysis,
+        totalValue,
+        undefined // userAge - can be added later
+      );
+
+      // Save recommendations to database
+      for (const rec of newRecommendations) {
+        await createRecommendation(
+          rec.type,
+          rec.priority,
+          rec.title,
+          rec.description,
+          rec.actionItems,
+          rec.expectedImpact
+        );
+      }
+    };
+
+    generateRecommendations();
+  }, [user?.id, target, totalValue, recommendationsEnabled]);
 
   // Mock data for sectors (you'll replace this with real data from your database)
   const sectorAllocation: AllocationItem[] = [
@@ -133,28 +223,6 @@ export function AllocationsView({
       value: totalValue * 0.08,
       percentage: 8,
       color: SECTOR_COLORS[5],
-    },
-  ];
-
-  // Mock data for tax vehicles (you'll replace this with real data)
-  const taxVehicleAllocation: AllocationItem[] = [
-    {
-      name: 'Tax-Deferred (401k/IRA)',
-      value: totalValue * 0.6,
-      percentage: 60,
-      color: TAX_VEHICLE_COLORS[0],
-    },
-    {
-      name: 'Taxable (Brokerage)',
-      value: totalValue * 0.3,
-      percentage: 30,
-      color: TAX_VEHICLE_COLORS[1],
-    },
-    {
-      name: 'Tax-Free (Roth)',
-      value: totalValue * 0.1,
-      percentage: 10,
-      color: TAX_VEHICLE_COLORS[2],
     },
   ];
 
@@ -203,48 +271,39 @@ export function AllocationsView({
 
   return (
     <div className="space-y-6">
-      {/* Chart Type Selector */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => {
-            setSelectedChart('asset');
-            setSelectedSegment(null);
-          }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            selectedChart === 'asset'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Asset Classes
-        </button>
-        <button
-          onClick={() => {
-            setSelectedChart('sector');
-            setSelectedSegment(null);
-          }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            selectedChart === 'sector'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Sectors
-        </button>
-        <button
-          onClick={() => {
-            setSelectedChart('tax');
-            setSelectedSegment(null);
-          }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            selectedChart === 'tax'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Tax Vehicles
-        </button>
-      </div>
+      {/* Allocation Breakdown Section */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Allocation Breakdown</h2>
+
+        {/* Chart Type Selector */}
+      <Tabs
+        value={selectedChart}
+        onValueChange={(value) => {
+          setSelectedChart(value as 'asset' | 'sector' | 'tax');
+          setSelectedSegment(null);
+        }}
+      >
+        <TabsList className="grid w-full grid-cols-3 bg-gray-200">
+          <TabsTrigger
+            value="asset"
+            className="data-[state=active]:bg-white"
+          >
+            Asset Classes
+          </TabsTrigger>
+          <TabsTrigger
+            value="sector"
+            className="data-[state=active]:bg-white"
+          >
+            Sectors
+          </TabsTrigger>
+          <TabsTrigger
+            value="tax"
+            className="data-[state=active]:bg-white"
+          >
+            Tax Vehicles
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Main Chart Card */}
       <Card className="p-6 bg-white shadow-md">
@@ -342,7 +401,7 @@ export function AllocationsView({
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Breakdown
             </h3>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
+            <div className="space-y-3">
               {currentAllocation.map((item, index) => (
                 <div
                   key={index}
@@ -417,6 +476,52 @@ export function AllocationsView({
             Top holding: {currentAllocation[0]?.percentage.toFixed(1)}%
           </p>
         </Card>
+      </div>
+      </div>
+
+      {/* Allocation Advisor Section */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Allocation Advisor</h2>
+
+        {/* Stats Cards */}
+        <AllocationStatsCards
+          diversification={diversification}
+          riskAnalysis={riskAnalysis}
+          drift={driftAnalysis}
+          taxEfficiency={taxEfficiency}
+        />
+
+        {/* Target Allocation Editor */}
+        <TargetAllocationEditor
+          currentTarget={target?.targets || null}
+          currentTemplate={target?.template_name || null}
+          onSave={saveTarget}
+          userAge={undefined} // Can be added from user profile later
+        />
+
+        {/* Actual vs Target Comparison */}
+        {target && (
+          <ActualVsTargetChart
+            actualAllocations={assetClassAllocations}
+            targetAllocations={target.targets}
+            totalValue={totalValue}
+          />
+        )}
+
+        {/* Risk Heatmap */}
+        <RiskHeatmap
+          riskAnalysis={riskAnalysis}
+          diversification={diversification}
+          taxEfficiency={taxEfficiency}
+        />
+
+        {/* Recommendations Panel */}
+        <RecommendationsPanel
+          recommendations={recommendations}
+          onDismiss={dismissRecommendation}
+          enabled={recommendationsEnabled}
+          onToggle={() => setRecommendationsEnabled(!recommendationsEnabled)}
+        />
       </div>
     </div>
   );

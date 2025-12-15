@@ -47,6 +47,7 @@ import {
   Edit,
   Trash2,
   Info,
+  Loader2,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -338,8 +339,17 @@ export function Transactions() {
     return filtered;
   }, [transactions, searchQuery, selectedAccount, dateRange, sortBy]);
 
+  // Show loading spinner until all data is ready
+  if (loading) {
+    return (
+      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4 pb-20">
+    <div className="p-4 pb-20 animate-in fade-in duration-300">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

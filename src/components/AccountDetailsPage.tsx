@@ -122,6 +122,7 @@ interface Account {
   current_balance: number;
   icon: string;
   is_visible: boolean;
+  asset_class_id?: string | null;
   institution: string | null;
   account_number_last4: string | null;
   created_at: string;

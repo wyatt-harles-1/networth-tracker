@@ -204,7 +204,7 @@ export class SyncErrorHandlingService {
       // Update account balance
       const { error: updateError } = await supabase
         .from('accounts')
-        .update({ balance: calculatedBalance })
+        .update({ current_balance: calculatedBalance })
         .eq('id', accountId)
         .eq('user_id', userId);
 

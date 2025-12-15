@@ -245,7 +245,7 @@ export class DataValidationService {
       // Get account's stored balance
       const { data: account, error: accountError } = await supabase
         .from('accounts')
-        .select('balance')
+        .select('current_balance')
         .eq('id', accountId)
         .eq('user_id', userId)
         .single();
@@ -268,13 +268,13 @@ export class DataValidationService {
         0
       ) || 0;
 
-      const difference = Math.abs(account.balance - calculatedBalance);
+      const difference = Math.abs(account.current_balance - calculatedBalance);
 
       return {
         passed: difference < 0.01,
         accountId,
         expectedBalance: calculatedBalance,
-        actualBalance: account.balance,
+        actualBalance: account.current_balance,
         difference,
         transactionCount: transactions?.length || 0,
       };
