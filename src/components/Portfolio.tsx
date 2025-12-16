@@ -59,6 +59,7 @@ import { AssetTypeFilter } from './AssetTypeFilter';
 import { PriceDataSettings } from './PriceDataSettings';
 import { Loader2 } from 'lucide-react';
 import { AccountBalanceHistoryPoint } from '@/services/accountMetricsService';
+import { PageLoading, PageContainer, PageHeader, ContentSection } from './ui/page-transitions';
 
 /**
  * Portfolio page component
@@ -420,308 +421,317 @@ export function PortfolioReal() {
     }
   }, [holdingsWithGains, sortBy]);
 
-  // ⚡ Show loading spinner until all data is ready (parallel loading via React Query)
+  // Phase 1: Loading State
   if (holdingsLoading || portfolioLoading || isLoadingPortfolioData) {
-    return (
-      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-      </div>
-    );
+    return <PageLoading message="Loading portfolio data..." />;
   }
 
   return (
-    <div className="p-4 pb-20 animate-in fade-in duration-300">
+    <PageContainer className="p-4 pb-20">
+      <PageHeader
+        title="Portfolio"
+        subtitle="Track your investment performance and holdings"
+      />
+
       <div className="space-y-4">
         {syncMessage && (
-          <Card
-            className={`p-4 ${
-              syncMessage.includes('Failed') || syncMessage.includes('error')
-                ? 'bg-red-50 border-red-200'
-                : 'bg-green-50 border-green-200'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <p
-                className={`text-sm ${
-                  syncMessage.includes('Failed') ||
-                  syncMessage.includes('error')
-                    ? 'text-red-700'
-                    : 'text-green-700'
-                }`}
-              >
-                {syncMessage}
-              </p>
-            </div>
-          </Card>
+          <ContentSection delay={0}>
+            <Card
+              className={`p-4 ${
+                syncMessage.includes('Failed') || syncMessage.includes('error')
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-green-50 border-green-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <p
+                  className={`text-sm ${
+                    syncMessage.includes('Failed') ||
+                    syncMessage.includes('error')
+                      ? 'text-red-700'
+                      : 'text-green-700'
+                  }`}
+                >
+                  {syncMessage}
+                </p>
+              </div>
+            </Card>
+          </ContentSection>
         )}
 
         {/* Portfolio Performance Chart */}
-        <PerformanceChartContainer
-          title="Portfolio Performance"
-          data={filteredHistoryData}
-          timeRange={timeRange}
-          availableTimeRanges={[
-            'YTD',
-            '1W',
-            '1M',
-            '3M',
-            '1Y',
-            '5Y',
-            'ALL',
-          ]}
-          loading={isLoadingPortfolioData}
-          refreshing={refreshing}
-          onTimeRangeChange={handleTimeRangeChange}
-          onRefresh={handleRefreshChart}
-          currentValue={portfolioMetrics.currentValue}
-          extraButton={
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleSyncPrices}
-                disabled={syncingPrices}
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
-                title="Manually fetch missing historical price data across all accounts"
-              >
-                <Database
-                  className={`h-3.5 w-3.5 ${syncingPrices ? 'animate-pulse' : ''}`}
-                />
-                <span className="hidden sm:inline">
-                  {syncingPrices ? 'Syncing...' : 'Sync Prices'}
-                </span>
-                <span className="sm:hidden">
-                  {syncingPrices ? '...' : 'Sync'}
-                </span>
-              </Button>
-              <PriceDataSettings />
-            </div>
-          }
-          extraContent={
-            syncProgress ? (
-              <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-md mx-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm text-purple-700 font-medium">
-                        {syncProgress}
-                      </p>
-                      {syncTimeRemaining > 0 && (
-                        <p className="text-xs text-purple-600 mt-1">
-                          Estimated time: {formatTimeRemaining(syncTimeRemaining)}
+        <ContentSection delay={50}>
+          <PerformanceChartContainer
+            title="Portfolio Performance"
+            data={filteredHistoryData}
+            timeRange={timeRange}
+            availableTimeRanges={[
+              'YTD',
+              '1W',
+              '1M',
+              '3M',
+              '1Y',
+              '5Y',
+              'ALL',
+            ]}
+            loading={isLoadingPortfolioData}
+            refreshing={refreshing}
+            onTimeRangeChange={handleTimeRangeChange}
+            onRefresh={handleRefreshChart}
+            currentValue={portfolioMetrics.currentValue}
+            extraButton={
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSyncPrices}
+                  disabled={syncingPrices}
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
+                  title="Manually fetch missing historical price data across all accounts"
+                >
+                  <Database
+                    className={`h-3.5 w-3.5 ${syncingPrices ? 'animate-pulse' : ''}`}
+                  />
+                  <span className="hidden sm:inline">
+                    {syncingPrices ? 'Syncing...' : 'Sync Prices'}
+                  </span>
+                  <span className="sm:hidden">
+                    {syncingPrices ? '...' : 'Sync'}
+                  </span>
+                </Button>
+                <PriceDataSettings />
+              </div>
+            }
+            extraContent={
+              syncProgress ? (
+                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-md mx-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm text-purple-700 font-medium">
+                          {syncProgress}
                         </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {syncTotal > 0 && (
-                        <span className="text-xs text-purple-600 font-semibold">
-                          {syncCurrent}/{syncTotal}
-                        </span>
-                      )}
-                      <Button
-                        onClick={handleCancelSync}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs border-red-300 text-red-700 hover:bg-red-50 h-7"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                  {syncTotal > 0 && (
-                    <div className="space-y-1">
-                      <Progress
-                        value={(syncCurrent / syncTotal) * 100}
-                        className="h-2.5 bg-purple-100"
-                      />
-                      <div className="flex justify-between items-center">
-                        <p className="text-xs text-purple-600">
-                          {Math.round((syncCurrent / syncTotal) * 100)}% complete
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          API rate limit: 5 calls/minute
-                        </p>
+                        {syncTimeRemaining > 0 && (
+                          <p className="text-xs text-purple-600 mt-1">
+                            Estimated time: {formatTimeRemaining(syncTimeRemaining)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {syncTotal > 0 && (
+                          <span className="text-xs text-purple-600 font-semibold">
+                            {syncCurrent}/{syncTotal}
+                          </span>
+                        )}
+                        <Button
+                          onClick={handleCancelSync}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs border-red-300 text-red-700 hover:bg-red-50 h-7"
+                        >
+                          Cancel
+                        </Button>
                       </div>
                     </div>
-                  )}
+                    {syncTotal > 0 && (
+                      <div className="space-y-1">
+                        <Progress
+                          value={(syncCurrent / syncTotal) * 100}
+                          className="h-2.5 bg-purple-100"
+                        />
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs text-purple-600">
+                            {Math.round((syncCurrent / syncTotal) * 100)}% complete
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            API rate limit: 5 calls/minute
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : undefined
-          }
-          headerContent={
-            isLoadingPortfolioData ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-blue-600" />
+              ) : undefined
+            }
+            headerContent={
+              isLoadingPortfolioData ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4 text-blue-600" />
+                      <p className="text-xs font-medium text-gray-600">
+                        Market Value
+                      </p>
+                    </div>
                     <p className="text-xs font-medium text-gray-600">
-                      Market Value
+                      Market Value Change
                     </p>
                   </div>
-                  <p className="text-xs font-medium text-gray-600">
-                    Market Value Change
-                  </p>
-                </div>
-                <div className="flex items-start justify-between">
-                  <p className="text-4xl font-bold text-gray-900">
-                    {formatCurrency(portfolioMetrics.currentValue)}
-                  </p>
-                  <div className="flex flex-col items-end gap-1">
-                    <div
-                      className={`flex items-center gap-1 ${portfolioMetrics.isPositive ? 'text-green-600' : 'text-red-600'}`}
-                    >
-                      {portfolioMetrics.isPositive ? (
-                        <TrendingUp className="h-4 w-4" />
-                      ) : (
-                        <TrendingDown className="h-4 w-4" />
-                      )}
-                      <span className="text-lg font-semibold">
-                        {portfolioMetrics.isPositive ? '+' : ''}
-                        {formatCurrency(portfolioMetrics.change)}
+                  <div className="flex items-start justify-between">
+                    <p className="text-4xl font-bold text-gray-900">
+                      {formatCurrency(portfolioMetrics.currentValue)}
+                    </p>
+                    <div className="flex flex-col items-end gap-1">
+                      <div
+                        className={`flex items-center gap-1 ${portfolioMetrics.isPositive ? 'text-green-600' : 'text-red-600'}`}
+                      >
+                        {portfolioMetrics.isPositive ? (
+                          <TrendingUp className="h-4 w-4" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4" />
+                        )}
+                        <span className="text-lg font-semibold">
+                          {portfolioMetrics.isPositive ? '+' : ''}
+                          {formatCurrency(portfolioMetrics.change)}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-sm ${portfolioMetrics.isPositive ? 'text-green-600' : 'text-red-600'}`}
+                      >
+                        ({portfolioMetrics.isPositive ? '+' : ''}
+                        {portfolioMetrics.changePercent.toFixed(2)}%)
                       </span>
                     </div>
-                    <span
-                      className={`text-sm ${portfolioMetrics.isPositive ? 'text-green-600' : 'text-red-600'}`}
-                    >
-                      ({portfolioMetrics.isPositive ? '+' : ''}
-                      {portfolioMetrics.changePercent.toFixed(2)}%)
-                    </span>
                   </div>
                 </div>
-              </div>
-            )
-          }
-        />
+              )
+            }
+          />
+        </ContentSection>
 
         {/* Asset Type Filter */}
-        <AssetTypeFilter
-          assetTypeCounts={availableAssetTypes}
-          selectedTypes={selectedAssetTypes}
-          onToggle={handleAssetTypeToggle}
-        />
+        <ContentSection delay={100}>
+          <AssetTypeFilter
+            assetTypeCounts={availableAssetTypes}
+            selectedTypes={selectedAssetTypes}
+            onToggle={handleAssetTypeToggle}
+          />
+        </ContentSection>
 
         {/* All Holdings List */}
-        <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-3">
-            All Holdings
-          </h4>
-          <div className="flex items-center gap-3 mb-4">
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4 text-gray-500" />
-              <Select
-                value={sortBy}
+        <ContentSection delay={150}>
+          <div>
+            <h4 className="text-sm font-medium text-gray-900 mb-3">
+              All Holdings
+            </h4>
+            <div className="flex items-center gap-3 mb-4">
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-4 h-4 text-gray-500" />
+                <Select
+                  value={sortBy}
+                  onValueChange={value =>
+                    setSortBy(
+                      value as
+                        | 'alphabetical'
+                        | 'value-high'
+                        | 'value-low'
+                        | 'value-gain-high'
+                        | 'value-gain-low'
+                        | 'percent-gain-high'
+                        | 'percent-gain-low'
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-[180px] bg-white border-gray-300">
+                    <SelectValue placeholder="Sort by..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-gray-200">
+                    <SelectItem
+                      value="alphabetical"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      Alphabetical
+                    </SelectItem>
+                    <SelectItem
+                      value="value-high"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      Value: High to Low
+                    </SelectItem>
+                    <SelectItem
+                      value="value-low"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      Value: Low to High
+                    </SelectItem>
+                    <SelectItem
+                      value="value-gain-high"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      Value Gain: High to Low
+                    </SelectItem>
+                    <SelectItem
+                      value="value-gain-low"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      Value Gain: Low to High
+                    </SelectItem>
+                    <SelectItem
+                      value="percent-gain-high"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      % Gain: High to Low
+                    </SelectItem>
+                    <SelectItem
+                      value="percent-gain-low"
+                      className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    >
+                      % Gain: Low to High
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Toggle Display Mode */}
+              <Tabs
+                value={holdingsDisplayMode}
                 onValueChange={value =>
-                  setSortBy(
-                    value as
-                      | 'alphabetical'
-                      | 'value-high'
-                      | 'value-low'
-                      | 'value-gain-high'
-                      | 'value-gain-low'
-                      | 'percent-gain-high'
-                      | 'percent-gain-low'
-                  )
+                  setHoldingsDisplayMode(value as 'value' | 'price')
                 }
+                className="w-[280px]"
               >
-                <SelectTrigger className="w-[180px] bg-white border-gray-300">
-                  <SelectValue placeholder="Sort by..." />
-                </SelectTrigger>
-                <SelectContent className="bg-white border-gray-200">
-                  <SelectItem
-                    value="alphabetical"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                <TabsList className="grid w-full grid-cols-2 bg-gray-200">
+                  <TabsTrigger
+                    value="value"
+                    className="data-[state=active]:bg-white"
                   >
-                    Alphabetical
-                  </SelectItem>
-                  <SelectItem
-                    value="value-high"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
+                    Value
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="price"
+                    className="data-[state=active]:bg-white"
                   >
-                    Value: High to Low
-                  </SelectItem>
-                  <SelectItem
-                    value="value-low"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
-                  >
-                    Value: Low to High
-                  </SelectItem>
-                  <SelectItem
-                    value="value-gain-high"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
-                  >
-                    Value Gain: High to Low
-                  </SelectItem>
-                  <SelectItem
-                    value="value-gain-low"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
-                  >
-                    Value Gain: Low to High
-                  </SelectItem>
-                  <SelectItem
-                    value="percent-gain-high"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
-                  >
-                    % Gain: High to Low
-                  </SelectItem>
-                  <SelectItem
-                    value="percent-gain-low"
-                    className="text-gray-900 focus:bg-gray-100 focus:text-gray-900"
-                  >
-                    % Gain: Low to High
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                    Per Share
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
-            {/* Toggle Display Mode */}
-            <Tabs
-              value={holdingsDisplayMode}
-              onValueChange={value =>
-                setHoldingsDisplayMode(value as 'value' | 'price')
-              }
-              className="w-[280px]"
-            >
-              <TabsList className="grid w-full grid-cols-2 bg-gray-200">
-                <TabsTrigger
-                  value="value"
-                  className="data-[state=active]:bg-white"
-                >
-                  Value
-                </TabsTrigger>
-                <TabsTrigger
-                  value="price"
-                  className="data-[state=active]:bg-white"
-                >
-                  Per Share
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {holdings.length === 0 ? (
+              <Card className="p-8 text-center bg-white border-0 shadow-sm">
+                <p className="text-sm text-gray-500">
+                  No holdings yet. Add transactions to see your portfolio.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {sortedHoldings.map(holding => (
+                  <HoldingCard
+                    key={holding.id}
+                    holding={holding}
+                    displayMode={holdingsDisplayMode}
+                    onSelect={setSelectedHolding}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-
-          {holdings.length === 0 ? (
-            <Card className="p-8 text-center bg-white border-0 shadow-sm">
-              <p className="text-sm text-gray-500">
-                No holdings yet. Add transactions to see your portfolio.
-              </p>
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {sortedHoldings.map(holding => (
-                <HoldingCard
-                  key={holding.id}
-                  holding={holding}
-                  displayMode={holdingsDisplayMode}
-                  onSelect={setSelectedHolding}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        </ContentSection>
       </div>
 
       {/* Holding Detail Modal */}
@@ -729,6 +739,6 @@ export function PortfolioReal() {
         holding={selectedHolding}
         onClose={() => setSelectedHolding(null)}
       />
-    </div>
+    </PageContainer>
   );
 }

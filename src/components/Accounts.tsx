@@ -60,6 +60,7 @@ import { AccountDetailsPage } from './AccountDetailsPage';
 import { AccountCard } from './AccountCard';
 import { SummaryMetricCard } from './SummaryMetricCard';
 import { AddAccountWizard } from './AddAccountWizard';
+import { PageLoading, PageContainer, PageHeader, ContentSection } from './ui/page-transitions';
 
 // Icon mapping for account types
 const iconMap = {
@@ -237,27 +238,23 @@ export function Accounts() {
     return getTotalAssets() - getTotalLiabilities();
   };
 
-  // Show loading spinner until all data is ready
+  // Phase 1: Loading State
   if (loading) {
-    return (
-      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-      </div>
-    );
+    return <PageLoading message="Loading accounts..." />;
   }
 
   return (
-    <div className="p-4 pb-20 animate-in fade-in duration-300">
-      <div className="space-y-4">
-        {/* Header with Summary */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            Accounts Overview
-          </h2>
+    <PageContainer className="p-4 pb-20">
+      <PageHeader
+        title="Accounts"
+        subtitle="Manage your financial accounts and track net worth"
+      />
 
-          {/* Warning Banner for Negative Asset Balances */}
-          {hasNegativeAssets() && (
-            <Card className="p-3 mb-4 bg-orange-50 border-orange-200">
+      <div className="space-y-4">
+        {/* Warning Banner for Negative Asset Balances */}
+        {hasNegativeAssets() && (
+          <ContentSection delay={0}>
+            <Card className="p-3 bg-orange-50 border-orange-200">
               <div className="flex items-start gap-2">
                 <span className="text-orange-600 text-sm">
                   <strong>Data Issue Detected:</strong> Some asset accounts have
@@ -266,10 +263,12 @@ export function Accounts() {
                 </span>
               </div>
             </Card>
-          )}
+          </ContentSection>
+        )}
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
+        {/* Summary Cards */}
+        <ContentSection delay={50}>
+          <div className="grid grid-cols-3 gap-3">
             <SummaryMetricCard
               label="Total Assets"
               value={formatCurrency(getTotalAssets())}
@@ -286,96 +285,102 @@ export function Accounts() {
               variant="blue"
             />
           </div>
-        </div>
+        </ContentSection>
 
         {/* Add Account Button */}
-        <Card className="p-4 bg-white border-0 shadow-sm mb-4">
-          <Button
-            onClick={() => setShowWizard(true)}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Account
-          </Button>
-        </Card>
+        <ContentSection delay={100}>
+          <Card className="p-4 bg-white border-0 shadow-sm">
+            <Button
+              onClick={() => setShowWizard(true)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Account
+            </Button>
+          </Card>
+        </ContentSection>
 
         {/* Assets Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-green-600" />
-            Assets
-          </h3>
+        <ContentSection delay={150}>
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              Assets
+            </h3>
 
-          {getAccountsByCategory('asset').map(
-            ({ category, accounts: categoryAccounts }) => (
-              <div key={category} className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-600 px-2">
-                  {category}
-                </h4>
-                {categoryAccounts.map(account => {
-                  const IconComponent =
-                    iconMap[account.icon as keyof typeof iconMap] || Wallet;
-                  return (
-                    <AccountCard
-                      key={account.id}
-                      account={account}
-                      accountType="asset"
-                      IconComponent={IconComponent}
-                      onClick={() => handleAccountClick(account)}
-                      onToggleVisibility={e => {
-                        e.stopPropagation();
-                        handleToggleVisibility(account.id);
-                      }}
-                      onDelete={e => {
-                        e.stopPropagation();
-                        handleDeleteAccount(account.id);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )
-          )}
-        </div>
+            {getAccountsByCategory('asset').map(
+              ({ category, accounts: categoryAccounts }) => (
+                <div key={category} className="space-y-2">
+                  <h4 className="text-sm font-medium text-gray-600 px-2">
+                    {category}
+                  </h4>
+                  {categoryAccounts.map(account => {
+                    const IconComponent =
+                      iconMap[account.icon as keyof typeof iconMap] || Wallet;
+                    return (
+                      <AccountCard
+                        key={account.id}
+                        account={account}
+                        accountType="asset"
+                        IconComponent={IconComponent}
+                        onClick={() => handleAccountClick(account)}
+                        onToggleVisibility={e => {
+                          e.stopPropagation();
+                          handleToggleVisibility(account.id);
+                        }}
+                        onDelete={e => {
+                          e.stopPropagation();
+                          handleDeleteAccount(account.id);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </div>
+        </ContentSection>
 
         {/* Liabilities Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <CreditCard className="h-5 w-5 text-red-600" />
-            Liabilities
-          </h3>
+        <ContentSection delay={200}>
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-red-600" />
+              Liabilities
+            </h3>
 
-          {getAccountsByCategory('liability').map(
-            ({ category, accounts: categoryAccounts }) => (
-              <div key={category} className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-600 px-2">
-                  {category}
-                </h4>
-                {categoryAccounts.map(account => {
-                  const IconComponent =
-                    iconMap[account.icon as keyof typeof iconMap] || CreditCard;
-                  return (
-                    <AccountCard
-                      key={account.id}
-                      account={account}
-                      accountType="liability"
-                      IconComponent={IconComponent}
-                      onClick={() => handleAccountClick(account)}
-                      onToggleVisibility={e => {
-                        e.stopPropagation();
-                        handleToggleVisibility(account.id);
-                      }}
-                      onDelete={e => {
-                        e.stopPropagation();
-                        handleDeleteAccount(account.id);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )
-          )}
-        </div>
+            {getAccountsByCategory('liability').map(
+              ({ category, accounts: categoryAccounts }) => (
+                <div key={category} className="space-y-2">
+                  <h4 className="text-sm font-medium text-gray-600 px-2">
+                    {category}
+                  </h4>
+                  {categoryAccounts.map(account => {
+                    const IconComponent =
+                      iconMap[account.icon as keyof typeof iconMap] || CreditCard;
+                    return (
+                      <AccountCard
+                        key={account.id}
+                        account={account}
+                        accountType="liability"
+                        IconComponent={IconComponent}
+                        onClick={() => handleAccountClick(account)}
+                        onToggleVisibility={e => {
+                          e.stopPropagation();
+                          handleToggleVisibility(account.id);
+                        }}
+                        onDelete={e => {
+                          e.stopPropagation();
+                          handleDeleteAccount(account.id);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </div>
+        </ContentSection>
       </div>
 
       {showDetailsPage && selectedAccount && (
@@ -394,6 +399,6 @@ export function Accounts() {
           onSubmit={handleWizardSubmit}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

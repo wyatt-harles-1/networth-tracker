@@ -55,6 +55,7 @@ import { Transaction, TransactionInsert } from '@/types/transaction';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useAccounts } from '@/hooks/useAccounts';
 import { formatCurrency, cn } from '@/lib/utils';
+import { PageLoading, PageContainer, PageHeader, ContentSection } from './ui/page-transitions';
 
 /**
  * Transactions page component
@@ -339,26 +340,18 @@ export function Transactions() {
     return filtered;
   }, [transactions, searchQuery, selectedAccount, dateRange, sortBy]);
 
-  // Show loading spinner until all data is ready
+  // Phase 1: Loading State
   if (loading) {
-    return (
-      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-      </div>
-    );
+    return <PageLoading message="Loading transactions..." />;
   }
 
   return (
-    <div className="p-4 pb-20 animate-in fade-in duration-300">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">
-            Portfolio Activity
-          </h2>
-
-          {/* Edit/Info buttons (only on list tab) */}
-          {activeTab === 'list' && (
+    <PageContainer className="p-4 pb-20">
+      <PageHeader
+        title="Transactions"
+        subtitle="Track and analyze your portfolio activity"
+        action={
+          activeTab === 'list' ? (
             <div className="flex gap-2">
               <Button
                 onClick={() => setShowInfoPopup(true)}
@@ -391,9 +384,11 @@ export function Transactions() {
                 </>
               )}
             </div>
-          )}
-        </div>
+          ) : undefined
+        }
+      />
 
+      <div className="space-y-6">
         {/* Tabs */}
         <Tabs
           defaultValue="list"
@@ -407,23 +402,26 @@ export function Transactions() {
             }
           }}
         >
-          <TabsList className="grid w-full h-full grid-cols-2 bg-gray-200">
-            <TabsTrigger
-              value="list"
-              className="data-[state=active]:bg-white text-base"
-            >
-              Transactions
-            </TabsTrigger>
-            <TabsTrigger
-              value="analytics"
-              className="data-[state=active]:bg-white text-base"
-            >
-              Analytics
-            </TabsTrigger>
-          </TabsList>
+          <ContentSection delay={0}>
+            <TabsList className="grid w-full h-full grid-cols-2 bg-gray-200">
+              <TabsTrigger
+                value="list"
+                className="data-[state=active]:bg-white text-base"
+              >
+                Transactions
+              </TabsTrigger>
+              <TabsTrigger
+                value="analytics"
+                className="data-[state=active]:bg-white text-base"
+              >
+                Analytics
+              </TabsTrigger>
+            </TabsList>
+          </ContentSection>
 
           {/* Search and Filter Toolbar */}
-          <div className="py-4">
+          <ContentSection delay={50}>
+            <div className="py-4">
             <div className="flex items-center justify-between gap-4">
               {/* Search */}
               <div className="relative flex-1 max-w-2xl">
@@ -459,9 +457,11 @@ export function Transactions() {
                 )}
               </Button>
             </div>
-          </div>
+            </div>
+          </ContentSection>
 
-          <TabsContent value="list" className="mt-4">
+          <ContentSection delay={100}>
+            <TabsContent value="list" className="mt-4">
             <TransactionListNew
               onEdit={handleEdit}
               transactions={filteredTransactions}
@@ -472,8 +472,9 @@ export function Transactions() {
               selectedTransactions={selectedTransactions}
               onToggleSelection={toggleSelection}
             />
-          </TabsContent>
-          <TabsContent value="analytics" className="mt-4 space-y-6">
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-4 space-y-6">
             {/* Analytics Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
@@ -547,7 +548,8 @@ export function Transactions() {
 
             {/* Existing Analytics Component */}
             <TransactionAnalytics />
-          </TabsContent>
+            </TabsContent>
+          </ContentSection>
         </Tabs>
       </div>
 
@@ -797,6 +799,6 @@ export function Transactions() {
           </Card>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

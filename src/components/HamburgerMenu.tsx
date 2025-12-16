@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Menu,
@@ -19,6 +20,51 @@ export function HamburgerMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🍔 HAMBURGER MENU DEBUG:');
+      console.log('Menu is OPEN');
+
+      // Check menu element
+      if (menuRef.current) {
+        const menuStyles = window.getComputedStyle(menuRef.current);
+        console.log('Menu Panel:');
+        console.log('  - z-index:', menuStyles.zIndex);
+        console.log('  - position:', menuStyles.position);
+        console.log('  - background:', menuStyles.backgroundColor);
+        console.log('  - transform:', menuStyles.transform);
+        console.log('  - opacity:', menuStyles.opacity);
+
+        // Check parent elements
+        let parent = menuRef.current.parentElement;
+        let level = 1;
+        while (parent && level <= 5) {
+          const parentStyles = window.getComputedStyle(parent);
+          console.log(`Parent Level ${level}:`, parent.tagName);
+          console.log('  - z-index:', parentStyles.zIndex);
+          console.log('  - position:', parentStyles.position);
+          console.log('  - overflow:', parentStyles.overflow);
+          console.log('  - transform:', parentStyles.transform);
+          parent = parent.parentElement;
+          level++;
+        }
+      }
+
+      // Check overlay element
+      if (overlayRef.current) {
+        const overlayStyles = window.getComputedStyle(overlayRef.current);
+        console.log('Overlay:');
+        console.log('  - z-index:', overlayStyles.zIndex);
+        console.log('  - background:', overlayStyles.backgroundColor);
+        console.log('  - opacity:', overlayStyles.opacity);
+      }
+    } else {
+      console.log('🍔 Menu is CLOSED');
+    }
+  }, [isOpen]);
 
   const menuItems = [
     {
@@ -88,26 +134,33 @@ export function HamburgerMenu() {
         variant="ghost"
         size="sm"
         onClick={() => setIsOpen(true)}
-        className="rounded-full w-10 h-10 p-0"
+        className="rounded-full w-10 h-10 p-0 relative z-10"
       >
         <Menu className="h-5 w-5 text-gray-600" />
       </Button>
 
-      {/* Overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 transition-opacity"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {/* Portal: Render overlay and menu at document root to escape header stacking context */}
+      {createPortal(
+        <>
+          {/* Overlay */}
+          {isOpen && (
+            <div
+              ref={overlayRef}
+              className="fixed inset-0 bg-black/50 transition-opacity"
+              style={{ zIndex: 9998 }}
+              onClick={() => setIsOpen(false)}
+            />
+          )}
 
-      {/* Slide-out Menu */}
-      <div
-        className={cn(
-          'fixed top-0 left-0 h-full w-80 bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out',
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
+          {/* Slide-out Menu */}
+          <div
+            ref={menuRef}
+            className={cn(
+              'fixed top-0 left-0 h-full w-80 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out',
+              isOpen ? 'translate-x-0' : '-translate-x-full'
+            )}
+            style={{ zIndex: 9999, backgroundColor: '#ffffff' }}
+          >
         {/* Menu Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
@@ -169,7 +222,10 @@ export function HamburgerMenu() {
             Wealth Tracker v1.0.0
           </p>
         </div>
-      </div>
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
 }

@@ -38,6 +38,7 @@ import { UpcomingDividendsCard } from './dashboard/UpcomingDividendsCard';
 import { ReconciliationSuggestionsCard } from './dashboard/ReconciliationSuggestionsCard';
 import { DividendIncomeSummaryCard } from './dashboard/DividendIncomeSummaryCard';
 import { GoalProgressCard } from './dashboard/GoalProgressCard';
+import { PageLoading, PageContainer, PageHeader, ContentSection } from './ui/page-transitions';
 
 /**
  * Dashboard page component
@@ -49,8 +50,15 @@ export function Dashboard() {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // Key to force re-render on refresh
+  const [initialLoading, setInitialLoading] = useState(true);
   const startY = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Simulate initial load (remove this if you have actual data loading)
+  useEffect(() => {
+    const timer = setTimeout(() => setInitialLoading(false), 300);
+    return () => clearTimeout(timer);
+  }, []);
 
   /**
    * Track the starting Y position when user touches the screen
@@ -121,6 +129,11 @@ export function Dashboard() {
     };
   }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
+  // Phase 1: Loading State
+  if (initialLoading) {
+    return <PageLoading />;
+  }
+
   return (
     <div ref={containerRef} className="h-screen overflow-y-auto">
       {/* Pull to refresh indicator */}
@@ -150,19 +163,43 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="p-4 pb-20">
+      {/* Phase 3-5: Main Content with Animations */}
+      <PageContainer className="p-4 pb-20">
+        <PageHeader
+          title="Dashboard"
+          subtitle="Your portfolio overview and key metrics"
+        />
+
         <div
-          className="space-y-4 outline-none transition-all duration-700 ease-in-out"
+          className="space-y-4 outline-none"
           key={refreshKey}
         >
-          <ReconciliationSuggestionsCard />
-          <NetWorthCard onNavigateToPortfolio={() => navigate('/portfolio')} />
-          <TopGainersLosersCard />
-          <GoalProgressCard />
-          <DividendIncomeSummaryCard />
-          <UpcomingDividendsCard />
+          {/* Each card cascades in with staggered delays */}
+          <ContentSection delay={0}>
+            <ReconciliationSuggestionsCard />
+          </ContentSection>
+
+          <ContentSection delay={50}>
+            <NetWorthCard onNavigateToPortfolio={() => navigate('/portfolio')} />
+          </ContentSection>
+
+          <ContentSection delay={100}>
+            <TopGainersLosersCard />
+          </ContentSection>
+
+          <ContentSection delay={150}>
+            <GoalProgressCard />
+          </ContentSection>
+
+          <ContentSection delay={200}>
+            <DividendIncomeSummaryCard />
+          </ContentSection>
+
+          <ContentSection delay={250}>
+            <UpcomingDividendsCard />
+          </ContentSection>
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }
