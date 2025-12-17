@@ -277,6 +277,80 @@ export class FinnhubService {
   }
 
   /**
+   * Get historical candle data (OHLCV)
+   * Free tier: Up to 1 year of daily data
+   * @param symbol Stock ticker symbol
+   * @param from Unix timestamp (seconds) - start date
+   * @param to Unix timestamp (seconds) - end date
+   * @param resolution D (daily), W (weekly), M (monthly)
+   */
+  static async getCandles(
+    symbol: string,
+    from: number,
+    to: number,
+    resolution: 'D' | 'W' | 'M' = 'D'
+  ): Promise<{
+    data: Array<{
+      date: string;
+      open: number;
+      high: number;
+      low: number;
+      close: number;
+      volume: number;
+    }> | null;
+    error: string | null;
+  }> {
+    try {
+      const response = await this.fetchFromFinnhub('/stock/candle', {
+        symbol: symbol.toUpperCase(),
+        resolution,
+        from: from.toString(),
+        to: to.toString(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Check for no data
+      if (data.s === 'no_data' || !data.t || data.t.length === 0) {
+        return {
+          data: null,
+          error: `No historical data available for ${symbol}`,
+        };
+      }
+
+      // Check for error response
+      if (data.s === 'error') {
+        return {
+          data: null,
+          error: `API error for ${symbol}`,
+        };
+      }
+
+      // Transform to our format
+      const candles = data.t.map((timestamp: number, index: number) => ({
+        date: new Date(timestamp * 1000).toISOString().split('T')[0],
+        open: data.o[index],
+        high: data.h[index],
+        low: data.l[index],
+        close: data.c[index],
+        volume: data.v[index],
+      }));
+
+      return { data: candles, error: null };
+    } catch (error) {
+      console.error(`Error fetching candles for ${symbol}:`, error);
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to fetch candles',
+      };
+    }
+  }
+
+  /**
    * Validate if a symbol exists
    */
   static async validateSymbol(symbol: string): Promise<boolean> {

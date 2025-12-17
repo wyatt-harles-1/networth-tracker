@@ -45,6 +45,7 @@ export class HistoricalPriceService {
    * @param onlyRecent - If true, only fetch last 7 days (for daily updates)
    * @param onProgress - Callback for progress updates
    * @param abortSignal - AbortSignal to cancel the operation
+   * @param prioritizeRecentDays - Number of recent days to prioritize (overrides onlyRecent if set)
    */
   static async smartSync(
     userId: string,
@@ -52,9 +53,11 @@ export class HistoricalPriceService {
     maxSymbols: number = 3,
     onlyRecent: boolean = false,
     onProgress?: (progress: AutoFetchProgress) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    prioritizeRecentDays?: number
   ): Promise<AutoFetchResult> {
-    console.log(`\n[HistoricalPrice] 🎯 Starting smart sync (max ${maxSymbols} symbols, recent only: ${onlyRecent})`);
+    const daysToFetch = prioritizeRecentDays || (onlyRecent ? 7 : 365);
+    console.log(`\n[HistoricalPrice] 🎯 Starting smart sync (max ${maxSymbols} symbols, fetching last ${daysToFetch} days)`);
 
     const result: AutoFetchResult = {
       success: true,
@@ -91,26 +94,20 @@ export class HistoricalPriceService {
 
       console.log(`[HistoricalPrice] 📊 Found ${uniqueSymbols.length} unique symbols`);
 
-      // Calculate date range
+      // Calculate date range - prioritize recent data
       const endDate = new Date().toISOString().split('T')[0];
-      let startDate: string;
+      const startDateObj = new Date();
+      startDateObj.setDate(startDateObj.getDate() - daysToFetch);
+      const startDate = startDateObj.toISOString().split('T')[0];
 
-      if (onlyRecent) {
-        // Only fetch last 7 days for daily updates
-        const recent = new Date();
-        recent.setDate(recent.getDate() - 7);
-        startDate = recent.toISOString().split('T')[0];
-        console.log(`[HistoricalPrice] 📅 Recent mode: ${startDate} to ${endDate}`);
-      } else {
-        // Full historical fetch (1 year back)
-        const historical = new Date();
-        historical.setDate(historical.getDate() - 365);
-        startDate = historical.toISOString().split('T')[0];
-        console.log(`[HistoricalPrice] 📅 Full mode: ${startDate} to ${endDate}`);
+      console.log(`[HistoricalPrice] 📅 Date range: ${startDate} to ${endDate} (${daysToFetch} days)`);
+      if (prioritizeRecentDays) {
+        console.log(`[HistoricalPrice] ✨ Prioritizing recent ${daysToFetch} days for immediate chart improvement`);
       }
 
-      // Find symbols that need data
-      const symbolsNeedingData: string[] = [];
+      // Find symbols that need data and prioritize by recency
+      const symbolsNeedingData: Array<{ symbol: string; latestDate: string | null; missingDays: number }> = [];
+
       for (const symbol of uniqueSymbols) {
         if (CryptoPriceService.isCryptocurrency(symbol)) {
           continue; // Skip crypto for now
@@ -119,15 +116,36 @@ export class HistoricalPriceService {
         const gaps = await this.findPriceGaps(symbol, startDate, endDate);
         if (gaps.length > 0) {
           const missingDays = gaps.reduce((sum, g) => sum + g.missingDays, 0);
-          console.log(`[HistoricalPrice] ${symbol} needs ${missingDays} days of data`);
-          symbolsNeedingData.push(symbol);
+
+          // Get the latest date we have for this symbol
+          const { data: latestPrice } = await supabase
+            .from('price_history')
+            .select('price_date')
+            .eq('symbol', symbol)
+            .order('price_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const latestDate = latestPrice?.price_date || null;
+
+          console.log(`[HistoricalPrice] ${symbol} needs ${missingDays} days (latest: ${latestDate || 'none'})`);
+          symbolsNeedingData.push({ symbol, latestDate, missingDays });
         }
       }
 
-      console.log(`[HistoricalPrice] 🎯 ${symbolsNeedingData.length} symbols need data`);
+      // PRIORITIZE: Sort by latest date (newest dates first for recent gaps)
+      // This backfills from today backwards - fixes visible flat lines first!
+      symbolsNeedingData.sort((a, b) => {
+        if (a.latestDate === null && b.latestDate === null) return 0;
+        if (a.latestDate === null) return 1; // No data = lower priority
+        if (b.latestDate === null) return -1;
+        return b.latestDate.localeCompare(a.latestDate); // Newer date = higher priority (recent gaps first!)
+      });
+
+      console.log(`[HistoricalPrice] 🎯 ${symbolsNeedingData.length} symbols need data (prioritizing recent gaps)`);
 
       // Limit to maxSymbols to respect rate limits
-      const symbolsToFetch = symbolsNeedingData.slice(0, maxSymbols);
+      const symbolsToFetch = symbolsNeedingData.slice(0, maxSymbols).map(s => s.symbol);
       const remaining = symbolsNeedingData.length - symbolsToFetch.length;
 
       if (remaining > 0) {
@@ -152,9 +170,9 @@ export class HistoricalPriceService {
         const totalSymbols = symbolsToFetch.length;
         const overallProgress = (currentProgress / totalSymbols) * 100;
 
-        // Calculate time remaining (13 seconds per symbol after the first)
+        // Calculate time remaining (2 seconds per symbol with Finnhub for recent data)
         const symbolsRemaining = totalSymbols - currentProgress;
-        const estimatedTimeRemaining = symbolsRemaining * 13; // 13 seconds per API call
+        const estimatedTimeRemaining = symbolsRemaining * 2; // 2 seconds per API call (Finnhub is fast!)
 
         const progressItem: AutoFetchProgress = {
           symbol,
@@ -170,15 +188,16 @@ export class HistoricalPriceService {
         try {
           console.log(`\n[HistoricalPrice] 🔍 Processing ${symbol}...`);
 
-          // Rate limiting: Wait 13 seconds between calls
+          // Rate limiting: Wait between calls (Finnhub: 1 sec, Alpha Vantage: 13 sec)
+          // Since we use Finnhub for recent data, this is much faster!
           if (result.symbolsProcessed > 0) {
-            console.log(`[HistoricalPrice] ⏳ Rate limiting - waiting 13 seconds...`);
-            await new Promise(resolve => setTimeout(resolve, 13000));
+            console.log(`[HistoricalPrice] ⏳ Rate limiting - waiting 2 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
 
-          // Fetch historical prices
-          console.log(`[HistoricalPrice] 🌐 Fetching from Alpha Vantage...`);
-          const fetchResult = await PriceService.getHistoricalPrices(symbol, 'compact');
+          // Fetch historical prices using hybrid approach
+          console.log(`[HistoricalPrice] 🌐 Fetching prices (hybrid: Finnhub for recent, Alpha Vantage for old)...`);
+          const fetchResult = await PriceService.getHistoricalPricesHybrid(symbol, startDate, endDate);
 
           if (fetchResult.error) {
             console.error(`[HistoricalPrice] ❌ ${symbol} - API error:`, fetchResult.error);

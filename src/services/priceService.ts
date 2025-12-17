@@ -138,7 +138,91 @@ export class PriceService {
   }
 
   /**
-   * Get historical prices for a symbol
+   * Get historical prices with hybrid API strategy
+   * - Uses Finnhub for data within last 1 year (fast, 60 calls/min)
+   * - Uses Alpha Vantage for data older than 1 year (slow, 5 calls/min)
+   * @param symbol Ticker symbol
+   * @param startDate Start date (YYYY-MM-DD)
+   * @param endDate End date (YYYY-MM-DD)
+   */
+  static async getHistoricalPricesHybrid(
+    symbol: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{ data: HistoricalPrice[] | null; error: string | null }> {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+      // Determine which API to use based on date range
+      const isRecentData = start >= oneYearAgo;
+
+      if (isRecentData) {
+        // Use Finnhub for recent data (< 1 year back)
+        console.log(`[PriceService] 🚀 Using Finnhub for recent data: ${symbol} (${startDate} to ${endDate})`);
+
+        const { FinnhubService } = await import('./finnhubService');
+
+        const fromTimestamp = Math.floor(start.getTime() / 1000);
+        const toTimestamp = Math.floor(end.getTime() / 1000);
+
+        const finnhubResult = await FinnhubService.getCandles(
+          symbol,
+          fromTimestamp,
+          toTimestamp,
+          'D'
+        );
+
+        if (finnhubResult.data) {
+          // Store in database
+          console.log(`[PriceService] Storing ${finnhubResult.data.length} Finnhub prices for ${symbol}...`);
+          for (const price of finnhubResult.data) {
+            await this.storePriceInHistory(
+              symbol,
+              price.date,
+              price.open,
+              price.high,
+              price.low,
+              price.close,
+              price.volume,
+              'finnhub'
+            );
+          }
+
+          return {
+            data: finnhubResult.data.map(p => ({
+              date: p.date,
+              open: p.open,
+              high: p.high,
+              low: p.low,
+              close: p.close,
+              volume: p.volume,
+            })),
+            error: null,
+          };
+        }
+
+        // Finnhub failed, fall back to Alpha Vantage
+        console.warn(`[PriceService] Finnhub failed, falling back to Alpha Vantage for ${symbol}`);
+      }
+
+      // Use Alpha Vantage for old data or as fallback
+      console.log(`[PriceService] 🐌 Using Alpha Vantage for historical data: ${symbol}`);
+      return await this.getHistoricalPrices(symbol, 'compact');
+
+    } catch (err) {
+      console.error(`[PriceService] Error in hybrid fetch for ${symbol}:`, err);
+      return {
+        data: null,
+        error: err instanceof Error ? err.message : 'Failed to fetch historical prices',
+      };
+    }
+  }
+
+  /**
+   * Get historical prices for a symbol (Alpha Vantage only)
    * @param symbol Ticker symbol
    * @param period Output size ('compact' = last 100 days, 'full' = 20+ years)
    */

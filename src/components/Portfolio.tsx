@@ -33,7 +33,6 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowUpDown,
-  Database,
   DollarSign,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -46,7 +45,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
 import { useHoldings } from '@/hooks/useHoldings';
 import { usePortfolioCalculations } from '@/hooks/usePortfolioCalculations';
@@ -60,6 +58,7 @@ import { PriceDataSettings } from './PriceDataSettings';
 import { Loader2 } from 'lucide-react';
 import { AccountBalanceHistoryPoint } from '@/services/accountMetricsService';
 import { PageLoading, PageContainer, PageHeader, ContentSection } from './ui/page-transitions';
+import { PullToRefresh } from './ui/pull-to-refresh';
 
 /**
  * Portfolio page component
@@ -78,13 +77,6 @@ export function PortfolioReal() {
   const [selectedAssetTypes, setSelectedAssetTypes] = useState<Set<string>>(
     new Set()
   );
-  const [syncingPrices, setSyncingPrices] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<string>('');
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [syncCurrent, setSyncCurrent] = useState(0);
-  const [syncTotal, setSyncTotal] = useState(0);
-  const [syncTimeRemaining, setSyncTimeRemaining] = useState(0);
-  const [syncAbortController, setSyncAbortController] = useState<AbortController | null>(null);
   const [selectedHolding, setSelectedHolding] = useState<any | null>(null);
 
   const { user } = useAuth();
@@ -122,14 +114,39 @@ export function PortfolioReal() {
     refetchAll: refetchPortfolioData,
   } = usePortfolioData(timeRange, daysBackMap[timeRange]);
 
-  // ⚡ PERFORMANCE: Refresh handler using React Query cache invalidation
+  // ⚡ PERFORMANCE: Refresh handler with automatic price sync
   const handleRefreshChart = async () => {
     if (!user) return;
 
     setRefreshing(true);
-    setSyncMessage(null);
 
     try {
+      // First, sync any missing price data (last 90 days, prioritizing recent)
+      console.log('[Portfolio] 🔄 Auto-syncing recent price data on refresh...');
+
+      const { HistoricalPriceService } = await import('@/services/historicalPriceService');
+      const accountIds = Array.from(new Set(holdings.map(h => h.account_id)));
+
+      let totalPricesAdded = 0;
+
+      for (const accountId of accountIds) {
+        const fetchResult = await HistoricalPriceService.smartSync(
+          user.id,
+          accountId,
+          3, // Max 3 symbols per refresh
+          false,
+          undefined, // No progress callback needed for automatic sync
+          undefined, // No abort signal
+          90 // Always fetch last 90 days (covers 3M chart view)
+        );
+        totalPricesAdded += fetchResult.totalPricesAdded;
+      }
+
+      if (totalPricesAdded > 0) {
+        console.log(`[Portfolio] ✅ Auto-sync added ${totalPricesAdded} prices`);
+      }
+
+      // Then refresh the chart data
       await refetchPortfolioData();
     } catch (err) {
       console.error('[Portfolio] Error refreshing portfolio data:', err);
@@ -144,103 +161,6 @@ export function PortfolioReal() {
     setTimeRange(range);
   };
 
-  // Format time remaining in a human-readable format
-  const formatTimeRemaining = (seconds: number): string => {
-    if (seconds < 60) {
-      return `${seconds}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  };
-
-  const handleCancelSync = () => {
-    if (syncAbortController) {
-      console.log('[Portfolio] 🛑 Cancelling sync operation...');
-      syncAbortController.abort();
-      setSyncMessage('Sync operation cancelled');
-      setTimeout(() => setSyncMessage(null), 3000);
-    }
-  };
-
-  const handleSyncPrices = async () => {
-    if (!user) return;
-
-    // Create abort controller for cancellation
-    const abortController = new AbortController();
-    setSyncAbortController(abortController);
-
-    setSyncingPrices(true);
-    setSyncProgress('Syncing prices across all accounts...');
-    setSyncCurrent(0);
-    setSyncTotal(0);
-    setSyncTimeRemaining(0);
-
-    console.log('[Portfolio] 🎯 Manual portfolio-wide price sync started');
-
-    try {
-      // Import the service
-      const { HistoricalPriceService } = await import(
-        '@/services/historicalPriceService'
-      );
-
-      // Get all unique account IDs
-      const accountIds = Array.from(new Set(holdings.map(h => h.account_id)));
-
-      let totalPricesAdded = 0;
-      let totalSymbolsProcessed = 0;
-
-      for (const accountId of accountIds) {
-        setSyncProgress(
-          `Syncing account ${accountIds.indexOf(accountId) + 1} of ${accountIds.length}...`
-        );
-
-        const fetchResult = await HistoricalPriceService.smartSync(
-          user.id,
-          accountId,
-          3, // Max 3 symbols per account
-          false,
-          progress => {
-            if (progress.status === 'fetching') {
-              setSyncProgress(`Fetching ${progress.symbol}...`);
-              setSyncCurrent(progress.current || 0);
-              setSyncTotal(progress.total || 0);
-              setSyncTimeRemaining(progress.estimatedTimeRemaining || 0);
-            }
-          },
-          abortController.signal
-        );
-
-        totalPricesAdded += fetchResult.totalPricesAdded;
-        totalSymbolsProcessed += fetchResult.symbolsProcessed;
-      }
-
-      if (totalPricesAdded > 0) {
-        setSyncMessage(
-          `Successfully synced ${totalPricesAdded} prices across ${totalSymbolsProcessed} symbols!`
-        );
-        setTimeout(() => setSyncMessage(null), 7000);
-
-        // ⚡ Refresh the chart data and holdings using React Query
-        await refetchPortfolioData();
-        await refetchHoldings();
-      } else {
-        setSyncMessage('All price data is up to date!');
-        setTimeout(() => setSyncMessage(null), 3000);
-      }
-    } catch (err) {
-      console.error('[Portfolio] ❌ Sync error:', err);
-      setSyncMessage('Error syncing prices. Check console for details.');
-      setTimeout(() => setSyncMessage(null), 5000);
-    } finally {
-      setSyncingPrices(false);
-      setSyncProgress('');
-      setSyncCurrent(0);
-      setSyncTotal(0);
-      setSyncTimeRemaining(0);
-      setSyncAbortController(null);
-    }
-  };
 
   // Filter historical data by selected asset types
   const filteredHistoryData = useMemo(() => {
@@ -427,39 +347,15 @@ export function PortfolioReal() {
   }
 
   return (
-    <PageContainer className="p-4 pb-20">
-      <PageHeader
-        title="Portfolio"
-        subtitle="Track your investment performance and holdings"
-      />
+    <PullToRefresh onRefresh={handleRefreshChart} disabled={refreshing}>
+      <PageContainer className="p-4 pb-20">
+        <PageHeader
+          title="Portfolio"
+          subtitle="Track your investment performance and holdings"
+        />
 
-      <div className="space-y-4">
-        {syncMessage && (
-          <ContentSection delay={0}>
-            <Card
-              className={`p-4 ${
-                syncMessage.includes('Failed') || syncMessage.includes('error')
-                  ? 'bg-red-50 border-red-200'
-                  : 'bg-green-50 border-green-200'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <p
-                  className={`text-sm ${
-                    syncMessage.includes('Failed') ||
-                    syncMessage.includes('error')
-                      ? 'text-red-700'
-                      : 'text-green-700'
-                  }`}
-                >
-                  {syncMessage}
-                </p>
-              </div>
-            </Card>
-          </ContentSection>
-        )}
-
-        {/* Portfolio Performance Chart */}
+        <div className="space-y-4">
+          {/* Portfolio Performance Chart */}
         <ContentSection delay={50}>
           <PerformanceChartContainer
             title="Portfolio Performance"
@@ -479,80 +375,7 @@ export function PortfolioReal() {
             onTimeRangeChange={handleTimeRangeChange}
             onRefresh={handleRefreshChart}
             currentValue={portfolioMetrics.currentValue}
-            extraButton={
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleSyncPrices}
-                  disabled={syncingPrices}
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
-                  title="Manually fetch missing historical price data across all accounts"
-                >
-                  <Database
-                    className={`h-3.5 w-3.5 ${syncingPrices ? 'animate-pulse' : ''}`}
-                  />
-                  <span className="hidden sm:inline">
-                    {syncingPrices ? 'Syncing...' : 'Sync Prices'}
-                  </span>
-                  <span className="sm:hidden">
-                    {syncingPrices ? '...' : 'Sync'}
-                  </span>
-                </Button>
-                <PriceDataSettings />
-              </div>
-            }
-            extraContent={
-              syncProgress ? (
-                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-md mx-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm text-purple-700 font-medium">
-                          {syncProgress}
-                        </p>
-                        {syncTimeRemaining > 0 && (
-                          <p className="text-xs text-purple-600 mt-1">
-                            Estimated time: {formatTimeRemaining(syncTimeRemaining)}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {syncTotal > 0 && (
-                          <span className="text-xs text-purple-600 font-semibold">
-                            {syncCurrent}/{syncTotal}
-                          </span>
-                        )}
-                        <Button
-                          onClick={handleCancelSync}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs border-red-300 text-red-700 hover:bg-red-50 h-7"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                    {syncTotal > 0 && (
-                      <div className="space-y-1">
-                        <Progress
-                          value={(syncCurrent / syncTotal) * 100}
-                          className="h-2.5 bg-purple-100"
-                        />
-                        <div className="flex justify-between items-center">
-                          <p className="text-xs text-purple-600">
-                            {Math.round((syncCurrent / syncTotal) * 100)}% complete
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            API rate limit: 5 calls/minute
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : undefined
-            }
+            extraButton={<PriceDataSettings />}
             headerContent={
               isLoadingPortfolioData ? (
                 <div className="flex items-center justify-center py-8">
@@ -734,11 +557,12 @@ export function PortfolioReal() {
         </ContentSection>
       </div>
 
-      {/* Holding Detail Modal */}
-      <HoldingDetailModal
-        holding={selectedHolding}
-        onClose={() => setSelectedHolding(null)}
-      />
-    </PageContainer>
+        {/* Holding Detail Modal */}
+        <HoldingDetailModal
+          holding={selectedHolding}
+          onClose={() => setSelectedHolding(null)}
+        />
+      </PageContainer>
+    </PullToRefresh>
   );
 }
