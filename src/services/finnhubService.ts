@@ -301,6 +301,15 @@ export class FinnhubService {
     error: string | null;
   }> {
     try {
+      // Check if API key is configured
+      if (!this.API_KEY) {
+        console.warn('[Finnhub] API key not configured, will use Alpha Vantage');
+        return {
+          data: null,
+          error: 'Finnhub API key not configured',
+        };
+      }
+
       const response = await this.fetchFromFinnhub('/stock/candle', {
         symbol: symbol.toUpperCase(),
         resolution,
@@ -309,13 +318,36 @@ export class FinnhubService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        return {
+          data: null,
+          error: `Finnhub API error: HTTP ${response.status}`,
+        };
       }
 
-      const data = await response.json();
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.warn(`[Finnhub] Non-JSON response for ${symbol}, will fall back to Alpha Vantage`);
+        return {
+          data: null,
+          error: `Finnhub returned non-JSON response for ${symbol}`,
+        };
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.warn(`[Finnhub] JSON parse error for ${symbol}, will fall back to Alpha Vantage`);
+        return {
+          data: null,
+          error: `Failed to parse Finnhub response for ${symbol}`,
+        };
+      }
 
       // Check for no data
       if (data.s === 'no_data' || !data.t || data.t.length === 0) {
+        console.log(`[Finnhub] No data available for ${symbol}, will fall back to Alpha Vantage`);
         return {
           data: null,
           error: `No historical data available for ${symbol}`,
@@ -324,6 +356,7 @@ export class FinnhubService {
 
       // Check for error response
       if (data.s === 'error') {
+        console.log(`[Finnhub] API error for ${symbol}, will fall back to Alpha Vantage`);
         return {
           data: null,
           error: `API error for ${symbol}`,
@@ -340,9 +373,10 @@ export class FinnhubService {
         volume: data.v[index],
       }));
 
+      console.log(`[Finnhub] ✅ Successfully fetched ${candles.length} candles for ${symbol}`);
       return { data: candles, error: null };
     } catch (error) {
-      console.error(`Error fetching candles for ${symbol}:`, error);
+      console.error(`[Finnhub] Unexpected error for ${symbol}:`, error);
       return {
         data: null,
         error: error instanceof Error ? error.message : 'Failed to fetch candles',
