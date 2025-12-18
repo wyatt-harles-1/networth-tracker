@@ -313,7 +313,7 @@ export function AllocationsView({
 
       {/* Main Chart Card - shown for asset, sector, and tax tabs */}
       {selectedChart !== 'advisor' && (
-      <Card className="p-6 bg-white shadow-md">
+      <Card className="p-6 bg-white shadow-md mt-4">
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Pie Chart */}
           <div className="flex-1">
