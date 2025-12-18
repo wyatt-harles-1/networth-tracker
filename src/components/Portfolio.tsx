@@ -205,7 +205,7 @@ export function PortfolioReal() {
       let batchNumber = 0;
       let totalSymbolsSynced = 0;
       const maxSymbolsPerBatch = 5;
-      const delayBetweenBatches = 15000; // 15 seconds (to respect 5 calls/min rate limit)
+      const delayBetweenBatches = 5000; // 5 seconds buffer between batches (rate limiting handled in smartSync)
 
       while (!abortController.signal.aborted) {
         batchNumber++;

@@ -327,10 +327,17 @@ export class FinnhubService {
       // Check if response is JSON before parsing
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        console.warn(`[Finnhub] Non-JSON response for ${symbol}, will fall back to Alpha Vantage`);
+        // Try to read the HTML response to see what error Finnhub returned
+        const htmlResponse = await response.text();
+        const errorPreview = htmlResponse.substring(0, 200);
+        console.warn(`[Finnhub] Non-JSON response for ${symbol}:`);
+        console.warn(`[Finnhub]   Status: ${response.status} ${response.statusText}`);
+        console.warn(`[Finnhub]   Content-Type: ${contentType}`);
+        console.warn(`[Finnhub]   Response preview: ${errorPreview}...`);
+        console.warn(`[Finnhub]   → Falling back to Alpha Vantage`);
         return {
           data: null,
-          error: `Finnhub returned non-JSON response for ${symbol}`,
+          error: `Finnhub returned non-JSON response for ${symbol} (status ${response.status})`,
         };
       }
 

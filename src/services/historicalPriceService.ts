@@ -188,16 +188,15 @@ export class HistoricalPriceService {
         try {
           console.log(`\n[HistoricalPrice] 🔍 Processing ${symbol}...`);
 
-          // Rate limiting: Wait between calls (Finnhub: 1 sec, Alpha Vantage: 13 sec)
-          // Since we use Finnhub for recent data, this is much faster!
+          // Rate limiting: Wait between calls for Alpha Vantage (5 calls/min = 12 seconds)
           if (result.symbolsProcessed > 0) {
-            console.log(`[HistoricalPrice] ⏳ Rate limiting - waiting 2 seconds...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log(`[HistoricalPrice] ⏳ Rate limiting - waiting 13 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 13000));
           }
 
-          // Fetch historical prices using hybrid approach
-          console.log(`[HistoricalPrice] 🌐 Fetching prices (hybrid: Finnhub for recent, Alpha Vantage for old)...`);
-          const fetchResult = await PriceService.getHistoricalPricesHybrid(symbol, startDate, endDate);
+          // Fetch historical prices using Alpha Vantage
+          console.log(`[HistoricalPrice] 🌐 Fetching prices from Alpha Vantage...`);
+          const fetchResult = await PriceService.getHistoricalPrices(symbol, 'compact');
 
           if (fetchResult.error) {
             console.error(`[HistoricalPrice] ❌ ${symbol} - API error:`, fetchResult.error);
