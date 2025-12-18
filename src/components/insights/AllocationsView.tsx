@@ -108,7 +108,7 @@ export function AllocationsView({
     null
   );
   const [selectedChart, setSelectedChart] = useState<
-    'asset' | 'sector' | 'tax'
+    'asset' | 'sector' | 'tax' | 'advisor'
   >('asset');
   const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
 
@@ -279,11 +279,11 @@ export function AllocationsView({
       <Tabs
         value={selectedChart}
         onValueChange={(value) => {
-          setSelectedChart(value as 'asset' | 'sector' | 'tax');
+          setSelectedChart(value as 'asset' | 'sector' | 'tax' | 'advisor');
           setSelectedSegment(null);
         }}
       >
-        <TabsList className="grid w-full grid-cols-3 bg-gray-200">
+        <TabsList className="grid w-full grid-cols-4 bg-gray-200">
           <TabsTrigger
             value="asset"
             className="data-[state=active]:bg-white"
@@ -302,10 +302,17 @@ export function AllocationsView({
           >
             Tax Vehicles
           </TabsTrigger>
+          <TabsTrigger
+            value="advisor"
+            className="data-[state=active]:bg-white"
+          >
+            Advisor
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {/* Main Chart Card */}
+      {/* Main Chart Card - shown for asset, sector, and tax tabs */}
+      {selectedChart !== 'advisor' && (
       <Card className="p-6 bg-white shadow-md">
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Pie Chart */}
@@ -437,11 +444,11 @@ export function AllocationsView({
           </div>
         </div>
       </Card>
-      </div>
+      )}
 
-      {/* Allocation Advisor Section */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Allocation Advisor</h2>
+      {/* Allocation Advisor Section - shown only on advisor tab */}
+      {selectedChart === 'advisor' && (
+      <div className="mt-6 space-y-6">
 
         {/* Stats Cards */}
         <AllocationStatsCards
@@ -482,6 +489,8 @@ export function AllocationsView({
           enabled={recommendationsEnabled}
           onToggle={() => setRecommendationsEnabled(!recommendationsEnabled)}
         />
+      </div>
+      )}
       </div>
     </div>
   );
