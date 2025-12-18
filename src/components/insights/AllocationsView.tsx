@@ -437,46 +437,6 @@ export function AllocationsView({
           </div>
         </div>
       </Card>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-0">
-          <p className="text-sm text-blue-700 font-medium mb-1">
-            Largest Allocation
-          </p>
-          <p className="text-xl font-bold text-blue-900">
-            {currentAllocation[0]?.name}
-          </p>
-          <p className="text-sm text-blue-600">
-            {currentAllocation[0]?.percentage.toFixed(1)}% •{' '}
-            {formatCurrency(currentAllocation[0]?.value)}
-          </p>
-        </Card>
-        <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-0">
-          <p className="text-sm text-green-700 font-medium mb-1">
-            Number of Categories
-          </p>
-          <p className="text-xl font-bold text-green-900">
-            {currentAllocation.length}
-          </p>
-          <p className="text-sm text-green-600">Well diversified</p>
-        </Card>
-        <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-0">
-          <p className="text-sm text-purple-700 font-medium mb-1">
-            Concentration Risk
-          </p>
-          <p className="text-xl font-bold text-purple-900">
-            {currentAllocation[0]?.percentage < 40
-              ? 'Low'
-              : currentAllocation[0]?.percentage < 60
-                ? 'Medium'
-                : 'High'}
-          </p>
-          <p className="text-sm text-purple-600">
-            Top holding: {currentAllocation[0]?.percentage.toFixed(1)}%
-          </p>
-        </Card>
-      </div>
       </div>
 
       {/* Allocation Advisor Section */}
