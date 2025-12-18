@@ -238,21 +238,30 @@ export class PriceService {
         .gte('price_date', startDateStr)
         .order('price_date', { ascending: true });
 
-      // If requiring recent data, only return if we have data from last 7 days
+      // If requiring recent data, only return cache if we have TODAY's or YESTERDAY's data
+      // This ensures we always fetch missing recent dates
       if (requireRecent) {
-        const recentDate = new Date();
-        recentDate.setDate(recentDate.getDate() - 7);
-        const recentDateStr = recentDate.toISOString().split('T')[0];
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        // For weekends, go back to Friday
+        while (yesterday.getDay() === 0 || yesterday.getDay() === 6) {
+          yesterday.setDate(yesterday.getDate() - 1);
+        }
+
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
 
         const { data: recentCheck } = await supabase
           .from('price_history')
           .select('price_date')
           .eq('symbol', symbol.toUpperCase())
-          .gte('price_date', recentDateStr)
+          .gte('price_date', yesterdayStr)
           .limit(1)
           .maybeSingle();
 
         if (!recentCheck) {
+          console.log(`[PriceService] No data from ${yesterdayStr} or later for ${symbol}, will fetch fresh data`);
           return { data: null, error: 'No recent cached data' };
         }
       }
