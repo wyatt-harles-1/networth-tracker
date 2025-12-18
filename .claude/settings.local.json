@@ -30,7 +30,8 @@
       "Bash(del srccomponentsHoldingDetailModal.tsx)",
       "Bash(npm uninstall:*)",
       "Bash(npm ls:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

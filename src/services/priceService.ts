@@ -71,34 +71,34 @@ export interface HistoricalPrice {
 export class PriceService {
   /**
    * Get current price for a symbol
-   * Uses Finnhub as primary source, falls back to CoinGecko for crypto
+   * Uses Yahoo Finance as primary source, falls back to CoinGecko for crypto
    */
   static async getCurrentPrice(
     symbol: string
   ): Promise<{ data: PriceData | null; error: string | null }> {
     try {
-      // Try Finnhub first for all symbols
-      const { FinnhubService } = await import('./finnhubService');
-      const finnhubResult = await FinnhubService.getQuote(symbol);
+      // Try Yahoo Finance first for stocks/ETFs
+      const { YahooFinanceService } = await import('./yahooFinanceService');
+      const yahooResult = await YahooFinanceService.getQuote(symbol);
 
-      if (finnhubResult.data) {
+      if (yahooResult.data && yahooResult.data.price > 0) {
         const priceData: PriceData = {
-          symbol: finnhubResult.data.symbol,
-          price: finnhubResult.data.price,
+          symbol: yahooResult.data.symbol,
+          price: yahooResult.data.price,
           date: new Date().toISOString().split('T')[0],
-          source: 'finnhub',
+          source: 'yahoo_finance',
         };
 
-        // Store price in history for caching
+        // Store price in history for caching (no OHLC data from quote, use price for all)
         await this.storePriceInHistory(
           symbol,
           priceData.date,
-          finnhubResult.data.open || finnhubResult.data.price,
-          finnhubResult.data.high || finnhubResult.data.price,
-          finnhubResult.data.low || finnhubResult.data.price,
-          finnhubResult.data.price,
-          undefined,
-          'finnhub'
+          yahooResult.data.price,
+          yahooResult.data.price,
+          yahooResult.data.price,
+          yahooResult.data.price,
+          yahooResult.data.volume,
+          'yahoo_finance'
         );
 
         return { data: priceData, error: null };
@@ -127,7 +127,7 @@ export class PriceService {
         return storedPrice;
       }
 
-      return { data: null, error: finnhubResult.error || `No price data available for ${symbol}` };
+      return { data: null, error: yahooResult.error || `No price data available for ${symbol}` };
     } catch (err) {
       console.error(`Error fetching price for ${symbol}:`, err);
       return {

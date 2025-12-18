@@ -9,7 +9,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { TransactionCategory } from '@/types/transaction';
-import { FinnhubService } from '@/services/finnhubService';
+import { YahooFinanceService } from '@/services/yahooFinanceService';
 
 export type AssetType = 'stock' | 'etf' | 'crypto' | 'option' | 'bond' | 'mutual_fund' | 'unknown';
 
@@ -78,10 +78,10 @@ export function detectAssetTypeFromPattern(ticker: string): AssetType {
 }
 
 /**
- * Detect asset type by looking up ticker using Finnhub API
+ * Detect asset type by looking up ticker using Yahoo Finance API
  * Uses three-tier strategy:
  * 1. Database cache (fastest, no API calls)
- * 2. Finnhub API (accurate, real-time)
+ * 2. Yahoo Finance API (accurate, real-time)
  * 3. Pattern matching (fallback)
  */
 export async function detectAssetType(ticker: string): Promise<{
@@ -130,43 +130,43 @@ export async function detectAssetType(ticker: string): Promise<{
       }
     }
 
-    // Step 2: Cache miss or expired - query Finnhub API
-    console.log(`[TickerDetection] Cache miss for ${normalizedTicker}, fetching from Finnhub`);
-    const finnhubResult = await FinnhubService.getAssetType(normalizedTicker);
+    // Step 2: Cache miss or expired - query Yahoo Finance API
+    console.log(`[TickerDetection] Cache miss for ${normalizedTicker}, fetching from Yahoo Finance`);
+    const yahooResult = await YahooFinanceService.getAssetType(normalizedTicker);
 
-    if (finnhubResult.assetType !== 'unknown') {
+    if (yahooResult.assetType !== 'unknown') {
       // Store in cache using the update function
       await supabase.rpc('update_ticker_cache', {
         p_symbol: normalizedTicker,
         p_yahoo_data: {
-          source: 'finnhub',
-          name: finnhubResult.name,
-          sector: finnhubResult.sector,
-          industry: finnhubResult.industry,
-          exchange: finnhubResult.exchange,
-          assetType: finnhubResult.assetType,
+          source: 'yahoo_finance',
+          name: yahooResult.name,
+          sector: yahooResult.sector,
+          industry: yahooResult.industry,
+          exchange: yahooResult.exchange,
+          assetType: yahooResult.assetType,
         },
-        p_name: finnhubResult.name || normalizedTicker,
-        p_asset_type: finnhubResult.assetType,
-        p_sector: finnhubResult.sector,
-        p_industry: finnhubResult.industry,
-        p_exchange: finnhubResult.exchange,
+        p_name: yahooResult.name || normalizedTicker,
+        p_asset_type: yahooResult.assetType,
+        p_sector: yahooResult.sector,
+        p_industry: yahooResult.industry,
+        p_exchange: yahooResult.exchange,
       });
 
-      console.log(`[TickerDetection] Finnhub success for ${normalizedTicker}: ${finnhubResult.assetType}`);
+      console.log(`[TickerDetection] Yahoo Finance success for ${normalizedTicker}: ${yahooResult.assetType}`);
 
       return {
-        assetType: finnhubResult.assetType,
-        category: assetTypeToCategory[finnhubResult.assetType],
+        assetType: yahooResult.assetType,
+        category: assetTypeToCategory[yahooResult.assetType],
         source: 'database',
-        name: finnhubResult.name,
-        sector: finnhubResult.sector,
-        industry: finnhubResult.industry,
-        exchange: finnhubResult.exchange,
+        name: yahooResult.name,
+        sector: yahooResult.sector,
+        industry: yahooResult.industry,
+        exchange: yahooResult.exchange,
       };
     }
 
-    // Step 3: Finnhub API failed - fall back to pattern matching
+    // Step 3: Yahoo Finance API failed - fall back to pattern matching
     const assetType = detectAssetTypeFromPattern(normalizedTicker);
 
     // Store pattern-detected type if not unknown
