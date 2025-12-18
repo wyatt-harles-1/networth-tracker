@@ -273,7 +273,7 @@ export class AccountMetricsService {
             const cacheKey = `${symbol}:${dateKey}`;
             const historicalPrice = historicalPriceCache.get(cacheKey);
 
-            let priceToUse: number;
+            let priceToUse: number | null = null;
             if (historicalPrice) {
               // Found historical price - use it and update last known price
               priceToUse = historicalPrice;
@@ -281,19 +281,24 @@ export class AccountMetricsService {
               successfulPriceLookups++;
             } else if (lastKnownPrices.has(symbol)) {
               // No price for this date, but we have a last known price - forward fill
+              // This handles weekends and minor gaps gracefully
               priceToUse = lastKnownPrices.get(symbol)!;
               forwardFilledPrices++;
             } else {
-              // No historical price and no last known price - use current price as ultimate fallback
-              priceToUse = fallbackPriceMap.get(symbol) || 0;
-              lastKnownPrices.set(symbol, priceToUse); // Save for future forward fills
+              // No historical price and no last known price yet
+              // Instead of using current price (which creates flat lines going backwards),
+              // we'll skip this holding for this date point
+              // The chart will start from the first date where we have actual data
               fallbackPriceUsed++;
 
-              // Log when we have to use current price
+              // Log when we skip due to missing data
               if (totalPriceLookups % 50 === 0) {
-                console.warn(`[AccountMetrics] No historical data for ${symbol} before ${dateKey}, using current price: $${priceToUse.toFixed(2)}`);
+                console.log(`[AccountMetrics] Skipping ${symbol} for ${dateKey} - no historical data yet (sync in progress)`);
               }
+              continue; // Skip this holding for this date
             }
+
+            if (priceToUse === null) continue;
 
             const holdingValue = holding.quantity * priceToUse;
             holdingsValue += holdingValue;
@@ -373,12 +378,12 @@ export class AccountMetricsService {
       console.log(`[AccountMetrics] Total price lookups: ${totalPriceLookups}`);
       console.log(`[AccountMetrics] Historical prices found: ${successfulPriceLookups} (${totalPriceLookups > 0 ? ((successfulPriceLookups/totalPriceLookups)*100).toFixed(1) : 0}%)`);
       console.log(`[AccountMetrics] Forward-filled prices: ${forwardFilledPrices} (${totalPriceLookups > 0 ? ((forwardFilledPrices/totalPriceLookups)*100).toFixed(1) : 0}%)`);
-      console.log(`[AccountMetrics] Current price fallback: ${fallbackPriceUsed} (${totalPriceLookups > 0 ? ((fallbackPriceUsed/totalPriceLookups)*100).toFixed(1) : 0}%)`);
+      console.log(`[AccountMetrics] Skipped (no data): ${fallbackPriceUsed} (${totalPriceLookups > 0 ? ((fallbackPriceUsed/totalPriceLookups)*100).toFixed(1) : 0}%)`);
 
       if (fallbackPriceUsed > 0) {
-        console.warn(`\n[AccountMetrics] ⚠️ Some assets are missing historical price data!`);
-        console.warn(`[AccountMetrics] Using current price for ${fallbackPriceUsed} lookups. This may cause inaccuracies in historical values.`);
-        console.warn(`[AccountMetrics] Consider populating the price_history table for more accurate charts.`);
+        console.log(`\n[AccountMetrics] ℹ️ Chart starts from earliest available historical data`);
+        console.log(`[AccountMetrics] Skipped ${fallbackPriceUsed} lookups where no historical price available yet`);
+        console.log(`[AccountMetrics] Background sync will fill in missing data automatically`);
       }
 
       const coveragePercent = totalPriceLookups > 0 ? ((successfulPriceLookups/totalPriceLookups)*100).toFixed(1) : 0;
