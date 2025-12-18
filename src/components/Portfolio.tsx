@@ -187,11 +187,12 @@ export function PortfolioReal() {
     setTimeRange(range);
   };
 
-  // Background sync - runs automatically until all symbols are synced
+  // Background sync - runs automatically until all data is backfilled OR rate limit is hit
   const startBackgroundSync = useCallback(async () => {
     if (!user || isBackgroundSyncing) return;
 
     console.log('[Portfolio] 🤖 Starting automatic background sync...');
+    console.log('[Portfolio] 📊 Will run until: (1) All historical data backfilled OR (2) Alpha Vantage rate limit hit (25 requests/day)');
     setIsBackgroundSyncing(true);
 
     // Create abort controller for cancellation
@@ -204,58 +205,116 @@ export function PortfolioReal() {
 
       let batchNumber = 0;
       let totalSymbolsSynced = 0;
+      let totalApiCallsMade = 0;
       const maxSymbolsPerBatch = 5;
-      const delayBetweenBatches = 5000; // 5 seconds buffer between batches (rate limiting handled in smartSync)
+      const delayBetweenBatches = 5000; // 5 seconds buffer between batches
+      const maxDailyApiCalls = 25; // Alpha Vantage free tier limit
 
-      while (!abortController.signal.aborted) {
-        batchNumber++;
-        let batchSymbolsProcessed = 0;
-        let batchPricesAdded = 0;
+      // Progressive backfill: start with recent data, then go deeper
+      const daysToFetchProgression = [90, 180, 365, 730, 1825, 3650]; // 3M, 6M, 1Y, 2Y, 5Y, 10Y
+      let progressionIndex = 0;
 
-        console.log(`[Portfolio] 🔄 Background sync batch #${batchNumber}...`);
+      while (!abortController.signal.aborted && progressionIndex < daysToFetchProgression.length) {
+        const currentDaysToFetch = daysToFetchProgression[progressionIndex];
+        console.log(`\n[Portfolio] 📅 Starting backfill phase: Last ${currentDaysToFetch} days`);
 
-        for (const accountId of accountIds) {
-          if (abortController.signal.aborted) break;
+        let phaseComplete = false;
 
-          const fetchResult = await HistoricalPriceService.smartSync(
-            user.id,
-            accountId,
-            maxSymbolsPerBatch,
-            false,
-            undefined,
-            abortController.signal,
-            90 // Always fetch last 90 days
-          );
+        while (!abortController.signal.aborted && !phaseComplete) {
+          batchNumber++;
+          let batchSymbolsProcessed = 0;
+          let batchPricesAdded = 0;
+          let rateLimitHit = false;
 
-          batchSymbolsProcessed += fetchResult.symbolsProcessed;
-          batchPricesAdded += fetchResult.totalPricesAdded;
+          console.log(`[Portfolio] 🔄 Batch #${batchNumber} (${totalApiCallsMade}/${maxDailyApiCalls} API calls used)...`);
+
+          for (const accountId of accountIds) {
+            if (abortController.signal.aborted) break;
+            if (totalApiCallsMade >= maxDailyApiCalls) {
+              console.log('[Portfolio] ⚠️ Reached daily API limit (25 requests), stopping sync');
+              rateLimitHit = true;
+              break;
+            }
+
+            const fetchResult = await HistoricalPriceService.smartSync(
+              user.id,
+              accountId,
+              maxSymbolsPerBatch,
+              false,
+              undefined,
+              abortController.signal,
+              currentDaysToFetch
+            );
+
+            batchSymbolsProcessed += fetchResult.symbolsProcessed;
+            batchPricesAdded += fetchResult.totalPricesAdded;
+            totalApiCallsMade += fetchResult.symbolsProcessed; // Each symbol = 1 API call
+
+            // Check for rate limit errors
+            if (fetchResult.errors.some(err =>
+              err.includes('rate limit') ||
+              err.includes('API call frequency') ||
+              err.includes('try again later')
+            )) {
+              console.log('[Portfolio] ⚠️ Alpha Vantage rate limit detected, stopping sync');
+              rateLimitHit = true;
+              break;
+            }
+          }
+
+          totalSymbolsSynced += batchSymbolsProcessed;
+          setSyncProgress({ current: totalSymbolsSynced, total: totalSymbolsSynced + batchSymbolsProcessed });
+
+          console.log(`[Portfolio] ✅ Batch #${batchNumber} complete: ${batchSymbolsProcessed} symbols, ${batchPricesAdded} prices (Total API calls: ${totalApiCallsMade}/${maxDailyApiCalls})`);
+
+          // Check if we hit rate limit
+          if (rateLimitHit) {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('[Portfolio] 🛑 SYNC PAUSED - Alpha Vantage daily limit reached');
+            console.log(`[Portfolio] 📊 Progress: ${totalApiCallsMade} API calls used today`);
+            console.log(`[Portfolio] 🔄 Sync will resume automatically tomorrow or on next page load`);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            break;
+          }
+
+          // If no symbols were processed in this phase, move to next phase
+          if (batchSymbolsProcessed === 0) {
+            console.log(`[Portfolio] ✅ Phase complete - all symbols synced for last ${currentDaysToFetch} days`);
+            phaseComplete = true;
+            break;
+          }
+
+          // If we processed fewer than max, this phase is probably done
+          if (batchSymbolsProcessed < maxSymbolsPerBatch) {
+            console.log(`[Portfolio] ✅ Phase complete - caught up on last ${currentDaysToFetch} days`);
+            phaseComplete = true;
+            break;
+          }
+
+          // Refresh chart after each batch
+          await refetchPortfolioData();
+
+          // Wait before next batch (rate limiting)
+          if (!abortController.signal.aborted && !rateLimitHit) {
+            console.log(`[Portfolio] ⏳ Waiting ${delayBetweenBatches / 1000}s before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+          }
         }
 
-        totalSymbolsSynced += batchSymbolsProcessed;
-        setSyncProgress({ current: totalSymbolsSynced, total: totalSymbolsSynced + batchSymbolsProcessed });
-
-        console.log(`[Portfolio] ✅ Batch #${batchNumber} complete: ${batchSymbolsProcessed} symbols, ${batchPricesAdded} prices`);
-
-        // If no symbols were processed, we're done
-        if (batchSymbolsProcessed === 0) {
-          console.log('[Portfolio] 🎉 Background sync complete - all symbols are up to date!');
-          break;
+        // Move to next phase if not rate limited
+        if (!rateLimitHit && phaseComplete) {
+          progressionIndex++;
+        } else {
+          break; // Stop if rate limited
         }
+      }
 
-        // If we processed fewer than max, we're probably done
-        if (batchSymbolsProcessed < maxSymbolsPerBatch) {
-          console.log('[Portfolio] 🎉 Background sync complete - caught up on all historical data!');
-          break;
-        }
-
-        // Refresh chart after each batch
-        await refetchPortfolioData();
-
-        // Wait before next batch (rate limiting)
-        if (!abortController.signal.aborted) {
-          console.log(`[Portfolio] ⏳ Waiting ${delayBetweenBatches / 1000}s before next batch...`);
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-        }
+      // Final summary
+      if (progressionIndex >= daysToFetchProgression.length) {
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('[Portfolio] 🎉 COMPLETE - All historical data backfilled!');
+        console.log(`[Portfolio] 📊 Total: ${totalSymbolsSynced} symbols synced, ${totalApiCallsMade} API calls used`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
 
       // Final refresh
