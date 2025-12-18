@@ -133,7 +133,7 @@ export function PortfolioReal() {
         const fetchResult = await HistoricalPriceService.smartSync(
           user.id,
           accountId,
-          3, // Max 3 symbols per refresh
+          5, // Max 5 symbols per refresh (Alpha Vantage limit: 5/min)
           false,
           undefined, // No progress callback needed for automatic sync
           undefined, // No abort signal
@@ -349,10 +349,6 @@ export function PortfolioReal() {
   return (
     <PullToRefresh onRefresh={handleRefreshChart} disabled={refreshing}>
       <PageContainer className="p-4 pb-20">
-        <PageHeader
-          title="Portfolio"
-          subtitle="Track your investment performance and holdings"
-        />
 
         <div className="space-y-4">
           {/* Portfolio Performance Chart */}
