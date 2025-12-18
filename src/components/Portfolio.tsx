@@ -90,7 +90,7 @@ export function PortfolioReal() {
     loading: holdingsLoading,
     refetch: refetchHoldings,
   } = useHoldings();
-  const { loading: portfolioLoading } = usePortfolioCalculations();
+  const { portfolio, loading: portfolioLoading } = usePortfolioCalculations();
 
   // ⚡ Calculate days back based on time range
   const daysBackMap = useMemo(() => {
@@ -391,9 +391,10 @@ export function PortfolioReal() {
       };
     }
 
-    // Calculate current value from live holdings data (not historical snapshots)
+    // Calculate current value from portfolio calculations (single source of truth)
     let currentValue: number;
     if (selectedAssetTypes.size > 0) {
+      // Filter holdings by asset type for filtered view
       const filteredHoldings = holdings.filter(holding =>
         selectedAssetTypes.has(holding.asset_type)
       );
@@ -401,10 +402,8 @@ export function PortfolioReal() {
         return sum + Number(holding.current_value);
       }, 0);
     } else {
-      // Use live holdings data for accurate current value
-      currentValue = holdings.reduce((sum: number, holding) => {
-        return sum + Number(holding.current_value);
-      }, 0);
+      // Use totalAssets from portfolio calculations for consistency across all pages
+      currentValue = portfolio.totalAssets;
     }
 
     const startValue = filteredHistoryData[0].holdings_value;
@@ -443,7 +442,7 @@ export function PortfolioReal() {
       gainChangePercent,
       isGainPositive: gainChange >= 0,
     };
-  }, [filteredHistoryData, selectedAssetTypes, holdings]);
+  }, [filteredHistoryData, selectedAssetTypes, holdings, portfolio.totalAssets]);
 
   // Calculate available asset types from holdings
   const availableAssetTypes = useMemo(() => {
