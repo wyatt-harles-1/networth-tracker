@@ -28,7 +28,7 @@
  * ============================================================================
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -78,6 +78,11 @@ export function PortfolioReal() {
     new Set()
   );
   const [selectedHolding, setSelectedHolding] = useState<any | null>(null);
+
+  // Background sync state
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
+  const backgroundSyncAbortRef = useRef<AbortController | null>(null);
 
   const { user } = useAuth();
   const {
@@ -182,6 +187,106 @@ export function PortfolioReal() {
     setTimeRange(range);
   };
 
+  // Background sync - runs automatically until all symbols are synced
+  const startBackgroundSync = useCallback(async () => {
+    if (!user || isBackgroundSyncing) return;
+
+    console.log('[Portfolio] 🤖 Starting automatic background sync...');
+    setIsBackgroundSyncing(true);
+
+    // Create abort controller for cancellation
+    const abortController = new AbortController();
+    backgroundSyncAbortRef.current = abortController;
+
+    try {
+      const { HistoricalPriceService } = await import('@/services/historicalPriceService');
+      const accountIds = Array.from(new Set(holdings.map(h => h.account_id)));
+
+      let batchNumber = 0;
+      let totalSymbolsSynced = 0;
+      const maxSymbolsPerBatch = 5;
+      const delayBetweenBatches = 15000; // 15 seconds (to respect 5 calls/min rate limit)
+
+      while (!abortController.signal.aborted) {
+        batchNumber++;
+        let batchSymbolsProcessed = 0;
+        let batchPricesAdded = 0;
+
+        console.log(`[Portfolio] 🔄 Background sync batch #${batchNumber}...`);
+
+        for (const accountId of accountIds) {
+          if (abortController.signal.aborted) break;
+
+          const fetchResult = await HistoricalPriceService.smartSync(
+            user.id,
+            accountId,
+            maxSymbolsPerBatch,
+            false,
+            undefined,
+            abortController.signal,
+            90 // Always fetch last 90 days
+          );
+
+          batchSymbolsProcessed += fetchResult.symbolsProcessed;
+          batchPricesAdded += fetchResult.totalPricesAdded;
+        }
+
+        totalSymbolsSynced += batchSymbolsProcessed;
+        setSyncProgress({ current: totalSymbolsSynced, total: totalSymbolsSynced + batchSymbolsProcessed });
+
+        console.log(`[Portfolio] ✅ Batch #${batchNumber} complete: ${batchSymbolsProcessed} symbols, ${batchPricesAdded} prices`);
+
+        // If no symbols were processed, we're done
+        if (batchSymbolsProcessed === 0) {
+          console.log('[Portfolio] 🎉 Background sync complete - all symbols are up to date!');
+          break;
+        }
+
+        // If we processed fewer than max, we're probably done
+        if (batchSymbolsProcessed < maxSymbolsPerBatch) {
+          console.log('[Portfolio] 🎉 Background sync complete - caught up on all historical data!');
+          break;
+        }
+
+        // Refresh chart after each batch
+        await refetchPortfolioData();
+
+        // Wait before next batch (rate limiting)
+        if (!abortController.signal.aborted) {
+          console.log(`[Portfolio] ⏳ Waiting ${delayBetweenBatches / 1000}s before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        }
+      }
+
+      // Final refresh
+      await refetchPortfolioData();
+
+    } catch (err) {
+      console.error('[Portfolio] Background sync error:', err);
+    } finally {
+      setIsBackgroundSyncing(false);
+      backgroundSyncAbortRef.current = null;
+      console.log('[Portfolio] Background sync stopped');
+    }
+  }, [user, holdings, isBackgroundSyncing, refetchPortfolioData]);
+
+  // Auto-start background sync on mount
+  useEffect(() => {
+    // Wait a bit for holdings to load, then start sync
+    const timer = setTimeout(() => {
+      if (user && holdings.length > 0 && !isBackgroundSyncing) {
+        startBackgroundSync();
+      }
+    }, 2000); // 2 second delay to let page load first
+
+    return () => {
+      clearTimeout(timer);
+      // Cancel background sync on unmount
+      if (backgroundSyncAbortRef.current) {
+        backgroundSyncAbortRef.current.abort();
+      }
+    };
+  }, [user, holdings.length]); // Only run when user or holdings count changes
 
   // Filter historical data by selected asset types
   const filteredHistoryData = useMemo(() => {
@@ -370,6 +475,13 @@ export function PortfolioReal() {
   return (
     <PullToRefresh onRefresh={handleRefreshChart} disabled={refreshing}>
       <PageContainer className="p-4 pb-20">
+        {/* Background Sync Indicator */}
+        {isBackgroundSyncing && (
+          <div className="fixed top-16 right-4 z-50 bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-fade-in">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm font-medium">Auto-syncing historical data...</span>
+          </div>
+        )}
 
         <div className="space-y-4">
           {/* Portfolio Performance Chart */}
