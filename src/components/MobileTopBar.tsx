@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HamburgerMenu } from './HamburgerMenu';
+import { usePageTitle } from '@/contexts/PageTitleContext';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -15,7 +16,11 @@ const pageTitles: Record<string, string> = {
 
 export function MobileTopBar() {
   const location = useLocation();
-  const title = pageTitles[location.pathname] || 'NetWorth Tracker';
+  const { pageTitle } = usePageTitle();
+
+  // Use dynamic page title if set, otherwise fall back to route-based title
+  const title = pageTitle || pageTitles[location.pathname] || 'NetWorth Tracker';
+
   return (
     <header className="fixed top-4 left-0 right-0 z-50 pointer-events-none">
       <div className="flex justify-center px-4 safe-area-pt">

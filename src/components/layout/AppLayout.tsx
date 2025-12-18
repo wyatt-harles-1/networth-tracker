@@ -37,6 +37,7 @@
 
 import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { PageTitleProvider } from '@/contexts/PageTitleContext';
 import { useAccounts } from '@/hooks/useAccounts';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { MobileTopBar } from '@/components/MobileTopBar';
@@ -104,27 +105,29 @@ export function AppLayout() {
 
   // ===== MAIN LAYOUT =====
   return (
-    <div className="min-h-screen bg-gray-50 transition-colors overflow-x-hidden">
-      {/* Top navigation bar - Fixed position */}
-      <MobileTopBar />
+    <PageTitleProvider>
+      <div className="min-h-screen bg-gray-50 transition-colors overflow-x-hidden">
+        {/* Top navigation bar - Fixed position */}
+        <MobileTopBar />
 
-      {/* Main content area - Router outlet renders child routes */}
-      <main className="pt-16 min-h-[calc(100vh-8rem)]">
-        <Outlet />
-      </main>
+        {/* Main content area - Router outlet renders child routes */}
+        <main className="pt-16 min-h-[calc(100vh-8rem)]">
+          <Outlet />
+        </main>
 
-      {/* Bottom navigation bar - Fixed position */}
-      <BottomNavigation />
+        {/* Bottom navigation bar - Fixed position */}
+        <BottomNavigation />
 
-      {/* Onboarding modal - Shown once for new users */}
-      {showOnboarding && (
-        <Onboarding
-          onComplete={() => {
-            setShowOnboarding(false);
-            localStorage.setItem('hasSeenOnboarding', 'true');
-          }}
-        />
-      )}
-    </div>
+        {/* Onboarding modal - Shown once for new users */}
+        {showOnboarding && (
+          <Onboarding
+            onComplete={() => {
+              setShowOnboarding(false);
+              localStorage.setItem('hasSeenOnboarding', 'true');
+            }}
+          />
+        )}
+      </div>
+    </PageTitleProvider>
   );
 }

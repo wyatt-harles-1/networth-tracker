@@ -35,6 +35,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, PieChart, TrendingDown, BarChart3, LineChart, Receipt, Target, ChevronRight, ArrowLeft, Clock } from 'lucide-react';
+import { usePageTitle } from '@/contexts/PageTitleContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -104,6 +105,7 @@ export function InsightsNew() {
   const [selectedTimespan, setSelectedTimespan] = useState('1Y');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [lastViewedTimes, setLastViewedTimes] = useState<Record<string, Date>>({});
+  const { setPageTitle } = usePageTitle();
 
   const {
     allocation,
@@ -120,12 +122,24 @@ export function InsightsNew() {
   const { performanceData, performanceMetrics } =
     usePerformanceMetrics(selectedTimespan);
 
+  // Reset page title when component unmounts
+  useEffect(() => {
+    return () => {
+      setPageTitle(null);
+    };
+  }, [setPageTitle]);
+
   // Handle tab selection with transition
   const handleTabSelect = (tabId: InsightsTab) => {
     setIsTransitioning(true);
+    const selectedTabInfo = INSIGHT_TABS.find(tab => tab.id === tabId);
     setTimeout(() => {
       setSelectedTab(tabId);
       setLastViewedTimes(prev => ({ ...prev, [tabId]: new Date() }));
+      // Update mobile top bar title
+      if (selectedTabInfo) {
+        setPageTitle(selectedTabInfo.label);
+      }
       setIsTransitioning(false);
     }, 200);
   };
@@ -135,6 +149,8 @@ export function InsightsNew() {
     setIsTransitioning(true);
     setTimeout(() => {
       setSelectedTab(null);
+      // Reset to default "Insights" title
+      setPageTitle(null);
       setIsTransitioning(false);
     }, 200);
   };
@@ -322,9 +338,6 @@ export function InsightsNew() {
                   <h2 className="text-xl font-bold text-gray-900">
                     {currentTab.label}
                   </h2>
-                  <p className="text-sm text-gray-600">
-                    {currentTab.description}
-                  </p>
                 </div>
               </>
             )}
