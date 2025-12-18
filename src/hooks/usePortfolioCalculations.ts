@@ -209,11 +209,11 @@ export function usePortfolioCalculations() {
   const portfolio = useMemo<PortfolioSummary>(() => {
     // ----- BASIC METRICS -----
 
-    // Total Assets: Sum of all holding values
-    const totalAssets = holdings.reduce(
-      (sum, h) => sum + Number(h.current_value),
-      0
-    );
+    // Total Assets: Sum of all asset account balances
+    // This includes both holdings and cash balances
+    const totalAssets = accounts
+      .filter(acc => acc.account_type === 'asset')
+      .reduce((sum, acc) => sum + Number(acc.current_balance), 0);
 
     // Total Liabilities: Sum of liability account balances (converted to positive)
     const totalLiabilities = Math.abs(
