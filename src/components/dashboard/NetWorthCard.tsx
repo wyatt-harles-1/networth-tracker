@@ -72,8 +72,9 @@ export function NetWorthCard({ onNavigateToPortfolio }: NetWorthCardProps) {
         100
       : 0;
 
-  // Use cached analytics if available, otherwise use real-time calculation
-  const totalValue = performance?.totalValue || portfolio.netWorth;
+  // Use real-time calculation (more accurate) over cached analytics
+  // Cached analytics may be incomplete if historical price data is still syncing
+  const totalValue = portfolio.netWorth || performance?.totalValue || 0;
   const percentageChange =
     performance?.dayChangePercent || fallbackPercentageChange;
   const loading = analyticsLoading || portfolioLoading;
