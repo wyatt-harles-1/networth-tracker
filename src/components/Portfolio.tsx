@@ -128,23 +128,44 @@ export function PortfolioReal() {
       const accountIds = Array.from(new Set(holdings.map(h => h.account_id)));
 
       let totalPricesAdded = 0;
+      let totalSymbolsProcessed = 0;
+      const allErrors: string[] = [];
+      const maxSymbolsPerRefresh = 5;
 
       for (const accountId of accountIds) {
         const fetchResult = await HistoricalPriceService.smartSync(
           user.id,
           accountId,
-          5, // Max 5 symbols per refresh (Alpha Vantage limit: 5/min)
+          maxSymbolsPerRefresh, // Max 5 symbols per refresh (Alpha Vantage limit: 5/min)
           false,
           undefined, // No progress callback needed for automatic sync
           undefined, // No abort signal
           90 // Always fetch last 90 days (covers 3M chart view)
         );
         totalPricesAdded += fetchResult.totalPricesAdded;
+        totalSymbolsProcessed += fetchResult.symbolsProcessed;
+        allErrors.push(...fetchResult.errors);
       }
 
-      if (totalPricesAdded > 0) {
-        console.log(`[Portfolio] ✅ Auto-sync added ${totalPricesAdded} prices`);
+      // Summary log
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[Portfolio] 📊 SYNC SUMMARY');
+      console.log(`[Portfolio] ✅ Total data points added: ${totalPricesAdded}`);
+      console.log(`[Portfolio] 📈 Symbols processed: ${totalSymbolsProcessed}`);
+
+      if (totalSymbolsProcessed >= maxSymbolsPerRefresh) {
+        console.log('[Portfolio] ⚠️ Rate limit reached - pull again to sync more symbols');
+      } else if (totalSymbolsProcessed > 0) {
+        console.log('[Portfolio] ✅ All available symbols synced');
+      } else {
+        console.log('[Portfolio] ℹ️ No symbols needed syncing');
       }
+
+      if (allErrors.length > 0) {
+        console.log(`[Portfolio] ⚠️ Errors: ${allErrors.length}`);
+        allErrors.forEach(err => console.log(`[Portfolio]    - ${err}`));
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // Then refresh the chart data
       await refetchPortfolioData();
