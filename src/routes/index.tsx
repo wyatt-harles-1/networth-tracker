@@ -35,6 +35,7 @@ import { InsightsNew as Insights } from '@/components/Insights';
 import { Transactions } from '@/components/Transactions';
 import { SmartStatementImporter } from '@/components/SmartStatementImporter';
 import { Settings } from '@/components/Settings';
+import { DataVisualizer } from '@/components/DataVisualizer';
 import { Onboarding } from '@/components/Onboarding';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
@@ -116,6 +117,12 @@ export const router = createBrowserRouter([
       {
         path: 'settings',
         element: <Settings />,
+      },
+
+      // Data Visualizer - Historical price data coverage tool (debug/admin)
+      {
+        path: 'data-visualizer',
+        element: <DataVisualizer />,
       },
     ],
   },
