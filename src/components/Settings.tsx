@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Loader2, Save, User, Calendar, TrendingUp } from 'lucide-react';
+import { Loader2, Save, User, Calendar, TrendingUp, Code } from 'lucide-react';
 
 interface ProfileUpdate {
   full_name: string | null;
@@ -32,6 +32,11 @@ export function Settings() {
   const [retirementGoalAmount, setRetirementGoalAmount] = useState('');
   const [expectedMonthlyContribution, setExpectedMonthlyContribution] =
     useState('');
+
+  // Developer Tools
+  const [enableDataVisualizer, setEnableDataVisualizer] = useState(
+    () => localStorage.getItem('enableDataVisualizer') === 'true'
+  );
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -125,6 +130,21 @@ export function Settings() {
     if (!currentAge || !retirementTargetAge) return null;
     const targetAge = parseInt(retirementTargetAge);
     return Math.max(0, targetAge - currentAge);
+  };
+
+  const handleToggleDataVisualizer = () => {
+    const newValue = !enableDataVisualizer;
+    setEnableDataVisualizer(newValue);
+    localStorage.setItem('enableDataVisualizer', newValue.toString());
+
+    // Show success message
+    setMessage({
+      type: 'success',
+      text: newValue
+        ? 'Data Visualizer enabled! Check the menu.'
+        : 'Data Visualizer disabled.',
+    });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   if (loading) {
@@ -320,6 +340,49 @@ export function Settings() {
                 with third parties.
               </p>
             </div>
+          </div>
+        </Card>
+
+        {/* Developer Tools */}
+        <Card className="p-6 bg-white shadow-md border-2 border-purple-200">
+          <div className="flex items-center gap-2 mb-4">
+            <Code className="h-5 w-5 text-purple-600" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              Developer Tools
+            </h3>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">
+                  Historical Data Visualizer
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  View price data coverage and gaps across all assets with interactive calendar
+                </p>
+              </div>
+              <Button
+                variant={enableDataVisualizer ? 'default' : 'outline'}
+                size="sm"
+                onClick={handleToggleDataVisualizer}
+                className={
+                  enableDataVisualizer
+                    ? 'bg-purple-600 hover:bg-purple-700'
+                    : ''
+                }
+              >
+                {enableDataVisualizer ? 'Enabled' : 'Disabled'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-xs text-yellow-800">
+              <strong>Debug Tool:</strong> These features are intended for
+              development and troubleshooting. They provide advanced data
+              insights and management capabilities.
+            </p>
           </div>
         </Card>
 

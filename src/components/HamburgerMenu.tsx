@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Briefcase,
   Upload,
+  Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -18,10 +19,19 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export function HamburgerMenu() {
   const [isOpen, setIsOpen] = useState(false);
+  const [enableDataVisualizer, setEnableDataVisualizer] = useState(false);
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const menuRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Check localStorage when menu opens
+  useEffect(() => {
+    if (isOpen) {
+      const enabled = localStorage.getItem('enableDataVisualizer') === 'true';
+      setEnableDataVisualizer(enabled);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,7 +76,7 @@ export function HamburgerMenu() {
     }
   }, [isOpen]);
 
-  const menuItems = [
+  const baseMenuItems = [
     {
       id: 'assets',
       label: 'Assets',
@@ -97,6 +107,21 @@ export function HamburgerMenu() {
       icon: Settings,
       description: 'App preferences and configuration',
     },
+  ];
+
+  // Conditionally add Data Visualizer menu item
+  const menuItems = [
+    ...baseMenuItems,
+    ...(enableDataVisualizer
+      ? [
+          {
+            id: 'data-visualizer',
+            label: 'Data Visualizer',
+            icon: Activity,
+            description: 'View historical price data coverage',
+          },
+        ]
+      : []),
     {
       id: 'logout',
       label: 'Logout',
@@ -117,6 +142,9 @@ export function HamburgerMenu() {
         break;
       case 'settings':
         navigate('/settings');
+        break;
+      case 'data-visualizer':
+        navigate('/data-visualizer');
         break;
       case 'logout':
         await signOut();
