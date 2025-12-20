@@ -5,21 +5,84 @@
  *
  * Debug/admin tool to visualize historical price data gaps and quality.
  *
- * Features (Coming Soon):
+ * Features:
  * - Interactive calendar showing data coverage for selected symbols
  * - Color-coded dates (real data, interpolated, missing)
  * - Coverage statistics and gap analysis
  * - Backfill capabilities for missing date ranges
- * - CSV export of gap reports
- * - Bulk operations across multiple symbols
+ * - Searchable symbol selector with coverage percentages
  *
  * ============================================================================
  */
 
-import { Card } from '@/components/ui/card';
-import { Activity, Calendar, TrendingUp } from 'lucide-react';
+import { useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
+import { usePageTitle } from '@/contexts/PageTitleContext';
+import { useDataVisualizer } from '@/hooks/useDataVisualizer';
+import { SymbolSelector } from './dataVisualizer/SymbolSelector';
+import { DataCalendar } from './dataVisualizer/DataCalendar';
+import { DataQualityLegend } from './dataVisualizer/DataQualityLegend';
+import { BackfillControls } from './dataVisualizer/BackfillControls';
+import { BulkBackfillPanel } from './dataVisualizer/BulkBackfillPanel';
+import { DataSourceFilter } from './dataVisualizer/DataSourceFilter';
 
 export function DataVisualizer() {
+  const { setPageTitle } = usePageTitle();
+
+  const {
+    symbols,
+    selectedSymbol,
+    setSelectedSymbol,
+    selectedSymbols,
+    toggleSymbolSelection,
+    clearSymbolSelection,
+    dateQualityMap,
+    filteredDateQualityMap,
+    dateRange,
+    selectedSources,
+    toggleSourceFilter,
+    backfillDate,
+    backfillRange,
+    bulkBackfill,
+    refreshData,
+    loading,
+    backfilling,
+    bulkBackfilling,
+    bulkProgress,
+    error,
+  } = useDataVisualizer();
+
+  // Set page title
+  useEffect(() => {
+    setPageTitle('Data Visualizer');
+    return () => setPageTitle(null);
+  }, [setPageTitle]);
+
+  // Handle backfill selected symbol (all gaps)
+  const handleBackfillAll = async () => {
+    if (!dateRange) return;
+    await backfillRange(dateRange.start, dateRange.end);
+  };
+
+  // Handle backfill for selected date
+  const handleBackfillSelected = async () => {
+    if (!dateRange) return;
+    // For now, backfill the entire range
+    // TODO: Allow selecting specific dates/ranges from calendar
+    await backfillRange(dateRange.start, dateRange.end);
+  };
+
+  if (loading && symbols.length === 0) {
+    return (
+      <div className="p-4 pb-20 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-2" />
+          <p className="text-sm text-gray-600">Loading symbol data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 pb-20">
       <div className="space-y-6">
@@ -29,66 +92,73 @@ export function DataVisualizer() {
             Historical Data Visualizer
           </h2>
           <p className="text-sm text-gray-600">
-            View and analyze historical price data coverage across all your holdings
+            Analyze price data coverage and fill gaps across your holdings
           </p>
         </div>
 
-        {/* Coming Soon Card */}
-        <Card className="p-8 bg-gradient-to-br from-purple-50 to-blue-50 border-purple-200">
-          <div className="max-w-2xl mx-auto text-center">
-            <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Activity className="w-10 h-10 text-purple-600" />
-            </div>
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Left Panel - Symbol Selector */}
+          <div className="lg:col-span-4 space-y-4">
+            <SymbolSelector
+              symbols={symbols}
+              selectedSymbol={selectedSymbol}
+              onSelect={setSelectedSymbol}
+              selectedSymbols={selectedSymbols}
+              onToggleSelect={toggleSymbolSelection}
+              loading={loading}
+            />
 
-            <h3 className="text-2xl font-bold text-gray-900 mb-3">
-              Coming Soon
-            </h3>
+            {/* Bulk Backfill Panel */}
+            <BulkBackfillPanel
+              selectedSymbols={selectedSymbols}
+              bulkBackfilling={bulkBackfilling}
+              bulkProgress={bulkProgress}
+              onBulkBackfill={bulkBackfill}
+              onClearSelection={clearSymbolSelection}
+              dateRange={dateRange}
+            />
+          </div>
 
-            <p className="text-gray-600 mb-6">
-              This powerful debug tool is under construction. It will help you visualize
-              and manage historical price data coverage for all your assets.
-            </p>
+          {/* Right Panel - Calendar and Controls */}
+          <div className="lg:col-span-8 space-y-4">
+            {/* Calendar */}
+            <DataCalendar
+              dateQualityMap={filteredDateQualityMap}
+              dateRange={dateRange}
+              selectedSymbol={selectedSymbol}
+              onDateSelect={(date) => {
+                console.log('Date selected:', date);
+              }}
+              onDateRangeBackfill={backfillRange}
+              backfilling={backfilling}
+            />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-              <div className="bg-white p-4 rounded-lg border border-purple-200">
-                <Calendar className="h-6 w-6 text-purple-600 mb-2" />
-                <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                  Interactive Calendar
-                </h4>
-                <p className="text-xs text-gray-600">
-                  Color-coded visualization of data quality for each date
-                </p>
-              </div>
+            {/* Three Column Row: Legend, Data Source Filter, Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <DataQualityLegend />
 
-              <div className="bg-white p-4 rounded-lg border border-purple-200">
-                <TrendingUp className="h-6 w-6 text-purple-600 mb-2" />
-                <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                  Coverage Statistics
-                </h4>
-                <p className="text-xs text-gray-600">
-                  Detailed gap analysis and quality scores per symbol
-                </p>
-              </div>
+              {selectedSymbol && (
+                <DataSourceFilter
+                  dateQualityMap={dateQualityMap}
+                  selectedSources={selectedSources}
+                  onToggleSource={toggleSourceFilter}
+                />
+              )}
 
-              <div className="bg-white p-4 rounded-lg border border-purple-200">
-                <Activity className="h-6 w-6 text-purple-600 mb-2" />
-                <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                  Backfill Actions
-                </h4>
-                <p className="text-xs text-gray-600">
-                  Fill gaps with one-click or bulk backfill operations
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-xs text-yellow-800">
-                <strong>Note:</strong> You've successfully enabled the Developer Tools!
-                The full implementation is in progress. Check back soon.
-              </p>
+              <BackfillControls
+                selectedSymbol={selectedSymbol}
+                backfilling={backfilling}
+                onBackfillSelected={handleBackfillSelected}
+                onBackfillAll={handleBackfillAll}
+                onRefresh={refreshData}
+                error={error}
+                dateQualityMap={dateQualityMap}
+                symbols={symbols}
+              />
             </div>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );

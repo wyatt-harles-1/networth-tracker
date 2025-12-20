@@ -1,0 +1,55 @@
+/* Data Visualizer Calendar Styles */
+
+.data-visualizer-calendar .rdp {
+  margin: 0;
+  width: 100%;
+}
+
+.data-visualizer-calendar .rdp-day {
+  cursor: pointer;
+  border-radius: 0.5rem;
+  transition: all 0.2s;
+  position: relative;
+  min-height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.data-visualizer-calendar .rdp-day:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+/* Single date selection - more prominent */
+.data-visualizer-calendar .rdp-day_selected {
+  border: 3px solid #7c3aed !important;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.3),
+              0 4px 12px rgba(124, 58, 237, 0.4) !important;
+  font-weight: 700 !important;
+  transform: scale(1.08);
+  z-index: 20;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%) !important;
+  color: white !important;
+}
+
+/* Range selection - start and end dates */
+.data-visualizer-calendar .rdp-day_range_start,
+.data-visualizer-calendar .rdp-day_range_end {
+  border: 3px solid #7c3aed !important;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.3),
+              0 4px 12px rgba(124, 58, 237, 0.4) !important;
+  font-weight: 700 !important;
+  transform: scale(1.08);
+  z-index: 20;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%) !important;
+  color: white !important;
+}
+
+/* Range middle dates */
+.data-visualizer-calendar .rdp-day_range_middle {
+  background: rgba(167, 139, 250, 0.25) !important;
+  border: 2px solid rgba(124, 58, 237, 0.4) !important;
+  font-weight: 600 !important;
+}

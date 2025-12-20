@@ -580,7 +580,10 @@ export class HistoricalPriceService {
       try {
         const gaps = await this.findPriceGaps(symbol, startDate, endDate);
 
+        console.log(`[HistoricalPrice] Gaps found for ${symbol} (${startDate} to ${endDate}):`, gaps);
+
         if (gaps.length === 0) {
+          console.log(`[HistoricalPrice] No gaps for ${symbol}, skipping backfill`);
           symbolsProcessed++;
           continue;
         }
@@ -594,22 +597,86 @@ export class HistoricalPriceService {
 
         await new Promise(resolve => setTimeout(resolve, 13000));
 
-        const result = await PriceService.getHistoricalPrices(symbol, 'compact');
+        // Get existing dates in the range to avoid re-fetching
+        const { data: existingData } = await supabase
+          .from('price_history')
+          .select('price_date')
+          .eq('symbol', symbol.toUpperCase())
+          .gte('price_date', startDate)
+          .lte('price_date', endDate);
+
+        const existingDates = new Set(existingData?.map(d => d.price_date) || []);
+
+        // Use Yahoo Finance for backfilling (no date range limitations, free)
+        // Alpha Vantage free tier can't do outputsize=full
+        const daysBack = Math.floor((new Date().getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
+
+        console.log(`[HistoricalPrice] Fetching historical data for ${symbol} (${daysBack} days back, ${startDate} to ${endDate})`);
+        console.log(`[HistoricalPrice] Using Yahoo Finance for unlimited historical access`);
+
+        const { YahooFinanceService } = await import('./yahooFinanceService');
+        const yahooResult = await YahooFinanceService.getHistoricalPricesByDateRange(symbol, startDate, endDate);
+
+        if (yahooResult.error || !yahooResult.data) {
+          errors.push(`${symbol}: ${yahooResult.error || 'No data returned'}`);
+          continue;
+        }
+
+        // Convert Yahoo format to standard HistoricalPrice format
+        const result = {
+          data: yahooResult.data.map(price => ({
+            date: typeof price.date === 'string' ? price.date : price.date.toISOString().split('T')[0],
+            open: price.open,
+            high: price.high,
+            low: price.low,
+            close: price.close,
+            volume: price.volume || 0,
+          })),
+          error: null
+        };
 
         if (result.error) {
           errors.push(`${symbol}: ${result.error}`);
           continue;
         }
 
-        if (result.data) {
-          const filteredPrices = result.data.filter(price => {
-            const priceDate = new Date(price.date);
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            return priceDate >= start && priceDate <= end;
-          });
+        // Log date range of returned data
+        if (result.data.length > 0) {
+          const dates = result.data.map(p => p.date).sort();
+          console.log(`[HistoricalPrice] Yahoo Finance returned ${result.data.length} price points`);
+          console.log(`[HistoricalPrice] Data range: ${dates[0]} to ${dates[dates.length - 1]}`);
+          console.log(`[HistoricalPrice] Requested range: ${startDate} to ${endDate}`);
+        }
 
-          pricesAdded += filteredPrices.length;
+        // Filter to only NEW data (not already in DB)
+        const allNewPrices = result.data.filter(price => {
+          const dateStr = price.date;
+          return !existingDates.has(dateStr);
+        });
+
+        console.log(`[HistoricalPrice] Found ${allNewPrices.length} new prices to store`);
+
+        // Store all new prices in the database
+        if (allNewPrices.length > 0) {
+          const { PriceService } = await import('./priceService');
+
+          for (const price of allNewPrices) {
+            await PriceService.storePriceInHistory(
+              symbol,
+              price.date,
+              price.open,
+              price.high,
+              price.low,
+              price.close,
+              price.volume,
+              'yahoo_finance'
+            );
+          }
+
+          pricesAdded += allNewPrices.length;
+          console.log(`[HistoricalPrice] ✅ Successfully stored ${allNewPrices.length} prices for ${symbol}`);
+        } else {
+          console.log(`[HistoricalPrice] ⚠️ No new prices to store (all dates already in DB)`);
         }
 
         symbolsProcessed++;

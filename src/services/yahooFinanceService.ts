@@ -166,6 +166,89 @@ export class YahooFinanceService {
   }
 
   /**
+   * Get historical prices for a symbol with custom date range
+   */
+  static async getHistoricalPricesByDateRange(
+    symbol: string,
+    startDate: string | Date,
+    endDate: string | Date = new Date()
+  ): Promise<{ data: YahooHistoricalPrice[] | null; error: string | null }> {
+    try {
+      const start = typeof startDate === 'string' ? new Date(startDate) : startDate;
+      let end = typeof endDate === 'string' ? new Date(endDate) : endDate;
+
+      // If start and end are the same day, extend end to include the full day
+      if (start.toISOString().split('T')[0] === end.toISOString().split('T')[0]) {
+        end = new Date(end);
+        end.setHours(23, 59, 59, 999); // Set to end of day
+      }
+
+      const period2 = Math.floor(end.getTime() / 1000);
+      const period1 = Math.floor(start.getTime() / 1000);
+
+      // Ensure period1 is before period2
+      if (period1 >= period2) {
+        console.error(`[YahooFinance] Invalid date range for ${symbol}:`, {
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          period1,
+          period2,
+        });
+        return { data: null, error: 'Invalid date range' };
+      }
+
+      console.log(`[YahooFinance] Fetching historical data for ${symbol}:`, {
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      });
+
+      const response = await this.fetchThroughProxy(`/v8/finance/chart/${symbol}`, {
+        period1: period1.toString(),
+        period2: period2.toString(),
+        interval: '1d',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.chart?.result?.[0]) {
+        return { data: null, error: `No historical data found for symbol: ${symbol}` };
+      }
+
+      const result = data.chart.result[0];
+      const timestamps = result.timestamp;
+      const quotes = result.indicators.quote[0];
+
+      if (!timestamps || !quotes) {
+        return { data: null, error: `Invalid data format for symbol: ${symbol}` };
+      }
+
+      const prices: YahooHistoricalPrice[] = timestamps.map((timestamp: number, index: number) => ({
+        date: new Date(timestamp * 1000),
+        open: quotes.open[index],
+        high: quotes.high[index],
+        low: quotes.low[index],
+        close: quotes.close[index],
+        volume: quotes.volume[index],
+        adjClose: result.indicators.adjclose?.[0]?.adjclose?.[index],
+      })).filter((price: YahooHistoricalPrice) =>
+        price.open !== null && price.close !== null
+      );
+
+      return { data: prices, error: null };
+    } catch (error) {
+      console.error(`Error fetching historical prices for ${symbol}:`, error);
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to fetch historical prices',
+      };
+    }
+  }
+
+  /**
    * Get historical prices for a symbol
    */
   static async getHistoricalPrices(

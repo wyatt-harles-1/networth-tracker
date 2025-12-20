@@ -38,8 +38,32 @@ export class PriceDataDiagnosticService {
 
       const uniqueSymbols = Array.from(new Set(holdings.map(h => h.symbol.toUpperCase())));
 
+      // Get all transactions to find first purchase date for each symbol
+      const { data: transactions, error: txError } = await supabase
+        .from('transactions')
+        .select('transaction_metadata, transaction_date')
+        .eq('user_id', userId);
+
+      if (txError) throw txError;
+
+      // Map each symbol to its first transaction date
+      const symbolFirstDate = new Map<string, string>();
+      if (transactions) {
+        for (const tx of transactions) {
+          const metadata = tx.transaction_metadata as any;
+          const ticker = metadata?.ticker?.toUpperCase();
+          if (ticker) {
+            const txDate = tx.transaction_date.split('T')[0];
+            if (!symbolFirstDate.has(ticker) || txDate < symbolFirstDate.get(ticker)!) {
+              symbolFirstDate.set(ticker, txDate);
+            }
+          }
+        }
+      }
+
       // Get price data coverage for each symbol
       const coverageResults: PriceDataCoverage[] = [];
+      const today = new Date().toISOString().split('T')[0];
 
       for (const symbol of uniqueSymbols) {
         const { data: priceData, error: priceError } = await supabase
@@ -57,8 +81,17 @@ export class PriceDataDiagnosticService {
         const earliestDate = priceData && priceData.length > 0 ? priceData[0].price_date : null;
         const latestDate = priceData && priceData.length > 0 ? priceData[priceData.length - 1].price_date : null;
 
-        // Calculate expected days (90 days for 3M view, accounting for weekends)
-        const expectedDays = 90;
+        // Calculate expected days from first transaction to today
+        const firstTxDate = symbolFirstDate.get(symbol);
+        let expectedDays = 90; // Default fallback
+
+        if (firstTxDate) {
+          const startDate = new Date(firstTxDate);
+          const endDate = new Date(today);
+          const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          expectedDays = Math.max(1, daysDiff + 1); // +1 to include both start and end dates
+        }
+
         const coveragePercent = expectedDays > 0 ? (daysOfData / expectedDays) * 100 : 0;
         const missingDays = Math.max(0, expectedDays - daysOfData);
 

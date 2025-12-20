@@ -420,6 +420,10 @@ export class AccountMetricsService {
 
       if (symbols.length === 0) return priceCache;
 
+      console.log(`[AccountMetrics] 🔍 Querying price_history table:`);
+      console.log(`[AccountMetrics]    Symbols: ${symbols.join(', ')}`);
+      console.log(`[AccountMetrics]    Date range: ${startDate} to ${endDate}`);
+
       const { data, error } = await supabase
         .from('price_history')
         .select('symbol, price_date, close_price')
@@ -429,21 +433,30 @@ export class AccountMetricsService {
         .order('price_date', { ascending: true });
 
       if (error) {
-        console.error('[AccountMetrics] Error fetching bulk historical prices:', error);
+        console.error('[AccountMetrics] ❌ Error fetching bulk historical prices:', error);
         return priceCache;
       }
 
       if (data) {
+        // Group by symbol to show per-symbol coverage
+        const symbolCounts = new Map<string, number>();
         for (const row of data) {
           const cacheKey = `${row.symbol}:${row.price_date}`;
           priceCache.set(cacheKey, Number(row.close_price));
+          symbolCounts.set(row.symbol, (symbolCounts.get(row.symbol) || 0) + 1);
         }
-        console.log(`[AccountMetrics] Loaded ${priceCache.size} historical price data points`);
+
+        console.log(`[AccountMetrics] 📊 Loaded ${priceCache.size} historical price data points`);
+        console.log(`[AccountMetrics] 📈 Per-symbol breakdown:`);
+        symbols.forEach(symbol => {
+          const count = symbolCounts.get(symbol.toUpperCase()) || 0;
+          console.log(`[AccountMetrics]    ${symbol}: ${count} days`);
+        });
       }
 
       return priceCache;
     } catch (err) {
-      console.error('[AccountMetrics] Error fetching bulk historical prices:', err);
+      console.error('[AccountMetrics] ❌ Error fetching bulk historical prices:', err);
       return new Map<string, number>();
     }
   }
